@@ -1,6 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;700&display=swap");
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   font-family: "Space Grotesk", sans-serif;
   font-synthesis: none;
@@ -31,6 +33,19 @@ body {
   );
 }
 
+html.dark body {
+  color: #e4e4e7;
+  background: #18181b;
+}
+
 .canvas-viewport {
   touch-action: none;
+}
+
+.vignette-overlay {
+  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.18);
+}
+
+html.dark .vignette-overlay {
+  box-shadow: inset 0 0 220px rgba(0, 0, 0, 0.82);
 }

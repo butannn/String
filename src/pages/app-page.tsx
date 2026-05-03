@@ -1,6 +1,6 @@
 import { Navigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CanvasEditor } from "@/components/canvas-editor";
+import { CanvasEditor } from "@/components/canvas/canvas-editor";
 import { useAuth } from "@/context/auth-context";
 import { insertRow, selectRows, updateSingleRow } from "@/lib/data-api";
 import type { CanvasRecord } from "@/types/canvas";

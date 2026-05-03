@@ -1,0 +1,738 @@
+import { useEffect, useRef, useState } from "react";
+import { deleteRows } from "@/lib/data-api";
+import { useZoomPan } from "@/hooks/use-zoom-pan";
+import { useCanvasData } from "@/hooks/use-canvas-data";
+import { useElementDrag } from "@/hooks/use-element-drag";
+import { useAttachmentActions } from "@/hooks/use-attachment-actions";
+import { useMediaActions } from "@/hooks/use-media-actions";
+import { useDescription } from "@/hooks/use-description";
+import {
+  getElementDescription,
+  getElementDescriptionStyle,
+} from "@/hooks/use-description";
+import { CanvasHeader } from "@/components/canvas/canvas-header";
+import { CanvasViewport } from "@/components/canvas/canvas-viewport";
+import { CanvasWorld } from "@/components/canvas/canvas-world";
+import { AttachmentLayer } from "@/components/canvas/attachment-layer";
+import { CanvasElement } from "@/components/canvas/canvas-element";
+import { MediaViewer } from "@/components/canvas/media-viewer";
+import { ElementPanel } from "@/components/canvas/element-panel";
+import { MobileToolbar } from "@/components/canvas/mobile-toolbar";
+import { DeleteElementDialog } from "@/components/canvas/dialogs/delete-element-dialog";
+import { LogoutDialog } from "@/components/canvas/dialogs/logout-dialog";
+import { CreateCanvasDialog } from "@/components/canvas/dialogs/create-canvas-dialog";
+import { Button } from "@/components/ui/button";
+import { useDarkMode } from "@/hooks/use-dark-mode";
+import { Moon, Sun, X } from "lucide-react";
+import type { CanvasRecord, ElementType, Mode, PanState } from "@/types/canvas";
+
+type CanvasEditorProps = {
+  userId: string;
+  canvases: CanvasRecord[];
+  activeCanvasId: string | null;
+  onSelectCanvas: (canvasId: string) => void;
+  onCreateCanvas: (title: string) => Promise<void>;
+  onRenameCanvas: (canvasId: string, title: string) => Promise<void>;
+  onDeleteCanvas: (canvasId: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+};
+
+export function CanvasEditor({
+  userId,
+  canvases,
+  activeCanvasId,
+  onSelectCanvas,
+  onCreateCanvas,
+  onLogout,
+}: CanvasEditorProps) {
+  const { isDark, toggleDark } = useDarkMode();
+
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const panMovedRef = useRef(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const pendingElementDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+
+  const [worldSize, setWorldSize] = useState(6000);
+  const [mode, setMode] = useState<Mode>("move");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const [mobileSheetType, setMobileSheetType] = useState<"add" | "menu">("add");
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [longPressPreview, setLongPressPreview] = useState<string | null>(null);
+
+  // Mobile viewport detection
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobileViewport(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  // Cleanup long-press timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current !== null) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
+
+  const {
+    zoom,
+    panX,
+    panY,
+    panState,
+    setPanState,
+    isSpacePanning,
+    zoomRef,
+    panXRef,
+    panYRef,
+    gestureActiveRef,
+    pointerPinchActiveRef,
+    suppressWheelUntilRef,
+    setZoomFromAnchorImmediate,
+    focusRows,
+    applyPan,
+  } = useZoomPan(viewportRef, worldSize);
+
+  const {
+    elements,
+    setElements,
+    attachments,
+    setAttachments,
+    selectedId,
+    setSelectedId,
+    selectedAttachmentId,
+    setSelectedAttachmentId,
+    elementMap,
+    selectedMediaElement,
+    canOpenSelectedMedia,
+  } = useCanvasData(activeCanvasId, focusRows);
+
+  const { setDragState } = useElementDrag(
+    elements,
+    setElements,
+    mode,
+    zoomRef,
+    gestureActiveRef,
+    pointerPinchActiveRef,
+  );
+
+  const {
+    createAttachment,
+    deleteAttachment,
+    flushPendingAttachments,
+    deleteElementAttachments,
+  } = useAttachmentActions(
+    activeCanvasId,
+    selectedId,
+    attachments,
+    setAttachments,
+    setMode,
+    setSelectedAttachmentId,
+    setError,
+  );
+
+  const {
+    imageInputRef,
+    audioInputRef,
+    videoInputRef,
+    isOpeningMedia,
+    mediaViewer,
+    setMediaViewer,
+    createElement,
+    handleMediaFile,
+    openSelectedMedia,
+  } = useMediaActions({
+    activeCanvasId,
+    userId,
+    isMobileViewport,
+    viewportRef,
+    zoomRef,
+    panXRef,
+    panYRef,
+    setElements,
+    setSelectedId,
+    setWorldSize,
+    flushPendingAttachments,
+    setAttachments,
+    setError,
+    setIsCreateDialogOpen,
+  });
+
+  const {
+    descriptionDraft,
+    setDescriptionDraft,
+    descriptionStyleDraft,
+    setDescriptionStyleDraft,
+    isSavingDescription,
+    saveSelectedDescription,
+  } = useDescription(selectedId, elements, setElements, setError);
+
+  // Pan state — pointermove / pointerup
+  useEffect(() => {
+    function handleViewportPanMove(event: PointerEvent) {
+      if (gestureActiveRef.current || pointerPinchActiveRef.current) return;
+      if (!panState) return;
+
+      const deltaX = event.clientX - panState.pointerStartX;
+      const deltaY = event.clientY - panState.pointerStartY;
+
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        panMovedRef.current = true;
+      }
+
+      applyPan(panState.startPanX + deltaX, panState.startPanY + deltaY);
+    }
+
+    function handleViewportPanEnd() {
+      if (!panState) return;
+      setPanState(null);
+      requestAnimationFrame(() => {
+        panMovedRef.current = false;
+      });
+    }
+
+    window.addEventListener("pointermove", handleViewportPanMove);
+    window.addEventListener("pointerup", handleViewportPanEnd);
+    window.addEventListener("pointercancel", handleViewportPanEnd);
+    return () => {
+      window.removeEventListener("pointermove", handleViewportPanMove);
+      window.removeEventListener("pointerup", handleViewportPanEnd);
+      window.removeEventListener("pointercancel", handleViewportPanEnd);
+    };
+  }, [panState, gestureActiveRef, pointerPinchActiveRef, applyPan, setPanState]);
+
+  // Pending element drag — activate once pointer moves beyond threshold
+  useEffect(() => {
+    function handlePendingDragMove(event: PointerEvent) {
+      const pending = pendingElementDragRef.current;
+      if (!pending) return;
+      const dx = event.clientX - pending.startX;
+      const dy = event.clientY - pending.startY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        if (longPressTimerRef.current !== null) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        pendingElementDragRef.current = null;
+        setDragState({
+          id: pending.id,
+          pointerStartX: pending.startX,
+          pointerStartY: pending.startY,
+          originX: pending.originX,
+          originY: pending.originY,
+        });
+      }
+    }
+
+    function handlePendingDragEnd() {
+      pendingElementDragRef.current = null;
+    }
+
+    window.addEventListener("pointermove", handlePendingDragMove);
+    window.addEventListener("pointerup", handlePendingDragEnd);
+    window.addEventListener("pointercancel", handlePendingDragEnd);
+    return () => {
+      window.removeEventListener("pointermove", handlePendingDragMove);
+      window.removeEventListener("pointerup", handlePendingDragEnd);
+      window.removeEventListener("pointercancel", handlePendingDragEnd);
+    };
+  }, [setDragState]);
+
+  async function deleteSelectedElement() {
+    if (!selectedId || selectedId.startsWith("temp-")) return;
+    const elementId = selectedId;
+
+    try {
+      await Promise.all([
+        deleteRows("canvas_elements", {
+          filters: [{ column: "id", op: "eq", value: elementId }],
+        }),
+        deleteElementAttachments(elementId),
+      ]);
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : "Could not delete",
+      );
+      return;
+    }
+
+    setElements((previous) => previous.filter((el) => el.id !== elementId));
+    setAttachments((previous) =>
+      previous.filter(
+        (a) =>
+          a.from_element_id !== elementId && a.to_element_id !== elementId,
+      ),
+    );
+    setSelectedId(null);
+    setSelectedAttachmentId(null);
+    setMode("move");
+    setMediaViewer((previous) =>
+      previous?.elementId === elementId ? null : previous,
+    );
+  }
+
+  function focusAllElements() {
+    focusRows(elements);
+  }
+
+  function cancelLongPressTimer() {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  function startElementLongPress(elementId: string) {
+    longPressTriggeredRef.current = false;
+    cancelLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      pendingElementDragRef.current = null;
+      setSelectedId(elementId);
+      setLongPressPreview(elementId);
+    }, 600);
+  }
+
+  function handleAddMedia(type: Extract<ElementType, "image" | "audio" | "video">) {
+    setMobileSheetOpen(false);
+    void createElement(type);
+  }
+
+  return (
+    <main className="flex h-screen flex-col bg-zinc-100 dark:bg-zinc-950">
+      <CanvasHeader
+        canvases={canvases}
+        activeCanvasId={activeCanvasId}
+        onSelectCanvas={onSelectCanvas}
+        isMobileViewport={isMobileViewport}
+        onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+      />
+
+      <div className="flex min-h-0 flex-1">
+        <CanvasViewport
+          viewportRef={viewportRef}
+          panState={panState}
+          setPanState={setPanState as React.Dispatch<React.SetStateAction<PanState | null>>}
+          isSpacePanning={isSpacePanning}
+          mode={mode}
+          selectedId={selectedId}
+          panXRef={panXRef}
+          panYRef={panYRef}
+          zoomRef={zoomRef}
+          gestureActiveRef={gestureActiveRef}
+          suppressWheelUntilRef={suppressWheelUntilRef}
+          setZoomFromAnchorImmediate={setZoomFromAnchorImmediate}
+          onCanvasClick={() => {
+            setSelectedId(null);
+            setSelectedAttachmentId(null);
+          }}
+          isMobileViewport={isMobileViewport}
+          panMovedRef={panMovedRef}
+        >
+          <CanvasWorld worldSize={worldSize} panX={panX} panY={panY} zoom={zoom}>
+            <AttachmentLayer
+              attachments={attachments}
+              elementMap={elementMap}
+              selectedAttachmentId={selectedAttachmentId}
+              onSelectAttachment={(id) => {
+                setSelectedId(null);
+                setSelectedAttachmentId(id);
+              }}
+            />
+
+            {elements.map((element) => {
+              const isSelected = selectedId === element.id;
+              const isAttachTarget =
+                mode === "attach" && !!selectedId && selectedId !== element.id;
+
+              return (
+                <CanvasElement
+                  key={element.id}
+                  element={element}
+                  isSelected={isSelected}
+                  isAttachTarget={isAttachTarget}
+                  description={getElementDescription(element)}
+                  descriptionStyle={getElementDescriptionStyle(element)}
+                  onSelect={(event) => {
+                    event.stopPropagation();
+                    if (longPressTriggeredRef.current) {
+                      longPressTriggeredRef.current = false;
+                      return;
+                    }
+
+                    if (mode === "attach" && selectedId) {
+                      void createAttachment(element.id);
+                      return;
+                    }
+
+                    setSelectedAttachmentId(null);
+                    setSelectedId(element.id);
+                  }}
+                  onPointerDown={(event) => {
+                    if (mode !== "move") return;
+
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    setSelectedId(element.id);
+                    setSelectedAttachmentId(null);
+
+                    pendingElementDragRef.current = {
+                      id: element.id,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      originX: element.x,
+                      originY: element.y,
+                    };
+
+                    startElementLongPress(element.id);
+                  }}
+                  onPointerUp={cancelLongPressTimer}
+                  onPointerCancel={cancelLongPressTimer}
+                  onPointerLeave={cancelLongPressTimer}
+                />
+              );
+            })}
+          </CanvasWorld>
+        </CanvasViewport>
+
+        {!isMobileViewport && (
+          <aside className="flex w-60 flex-col gap-3 overflow-y-auto border-l border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            {/* Dark mode toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isDark ? (
+                  <Moon size={14} className="text-zinc-400" />
+                ) : (
+                  <Sun size={14} className="text-zinc-500" />
+                )}
+                <span className="text-xs text-zinc-600 dark:text-zinc-400">Dark mode</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isDark}
+                onClick={toggleDark}
+                className={`relative inline-flex h-[26px] w-[46px] flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isDark ? "bg-zinc-600" : "bg-zinc-200"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    isDark ? "translate-x-[22px]" : "translate-x-[2px]"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                Add
+              </p>
+              <div className="grid grid-cols-3 gap-1">
+                <Button
+                  variant="outline"
+                  className="h-9 text-xs"
+                  onClick={() => void createElement("image")}
+                >
+                  Image
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-9 text-xs"
+                  onClick={() => void createElement("audio")}
+                >
+                  Audio
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-9 text-xs"
+                  onClick={() => void createElement("video")}
+                >
+                  Video
+                </Button>
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <ElementPanel
+                selectedId={selectedId}
+                selectedAttachmentId={selectedAttachmentId}
+                mode={mode}
+                descriptionDraft={descriptionDraft}
+                setDescriptionDraft={setDescriptionDraft}
+                descriptionStyleDraft={descriptionStyleDraft}
+                setDescriptionStyleDraft={setDescriptionStyleDraft}
+                isSavingDescription={isSavingDescription}
+                onSaveDescription={saveSelectedDescription}
+                onDeleteElement={() => setIsDeleteDialogOpen(true)}
+                onDeleteAttachment={() => {
+                  if (selectedAttachmentId)
+                    void deleteAttachment(selectedAttachmentId);
+                }}
+                onOpenMedia={() => void openSelectedMedia(selectedMediaElement)}
+                canOpenMedia={canOpenSelectedMedia}
+                isOpeningMedia={isOpeningMedia}
+                onSetMoveMode={() => setMode("move")}
+                onSetAttachMode={() => setMode("attach")}
+              />
+            </div>
+
+            <div className="mt-auto flex flex-col gap-1 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <Button
+                variant="outline"
+                className="h-9 w-full text-xs"
+                onClick={focusAllElements}
+              >
+                Focus All
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 w-full text-xs"
+                onClick={() => setIsCreateDialogOpen(true)}
+              >
+                New Canvas
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 w-full text-xs"
+                onClick={() => setIsLogoutDialogOpen(true)}
+              >
+                Logout
+              </Button>
+            </div>
+          </aside>
+        )}
+      </div>
+
+      {error ? (
+        <div className="pointer-events-none fixed right-4 top-20 z-40 rounded-md bg-red-600/90 px-3 py-2 text-sm text-white shadow">
+          {error}
+        </div>
+      ) : null}
+
+      <MediaViewer
+        viewer={mediaViewer}
+        onClose={() => setMediaViewer(null)}
+        elements={elements}
+      />
+
+      {/* Hidden file inputs */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          void handleMediaFile(file, "image");
+          event.currentTarget.value = "";
+        }}
+      />
+      <input
+        ref={audioInputRef}
+        type="file"
+        className="hidden"
+        accept="audio/*"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          void handleMediaFile(file, "audio");
+          event.currentTarget.value = "";
+        }}
+      />
+      <input
+        ref={videoInputRef}
+        type="file"
+        className="hidden"
+        accept="video/*"
+        onChange={(event) => {
+          const file = event.target.files?.[0] ?? null;
+          void handleMediaFile(file, "video");
+          event.currentTarget.value = "";
+        }}
+      />
+
+      <DeleteElementDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        onConfirm={() => void deleteSelectedElement()}
+      />
+
+      <LogoutDialog
+        open={isLogoutDialogOpen}
+        onOpenChange={setIsLogoutDialogOpen}
+        onConfirm={() => void onLogout()}
+      />
+
+      <CreateCanvasDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onCreateCanvas={onCreateCanvas}
+      />
+
+      {isMobileViewport ? (
+        <MobileToolbar
+          selectedId={selectedId}
+          selectedAttachmentId={selectedAttachmentId}
+          mode={mode}
+          mobileSheetOpen={mobileSheetOpen}
+          mobileSheetType={mobileSheetType}
+          descriptionDraft={descriptionDraft}
+          setDescriptionDraft={setDescriptionDraft}
+          descriptionStyleDraft={descriptionStyleDraft}
+          setDescriptionStyleDraft={setDescriptionStyleDraft}
+          isSavingDescription={isSavingDescription}
+          onSaveDescription={saveSelectedDescription}
+          onOpenSheet={(type) => {
+            setMobileSheetType(type);
+            setMobileSheetOpen(true);
+          }}
+          onCloseSheet={() => setMobileSheetOpen(false)}
+          onClearSelection={() => {
+            setSelectedId(null);
+            setSelectedAttachmentId(null);
+            setMode("move");
+          }}
+          onFocusAll={focusAllElements}
+          onSetMoveMode={() => setMode("move")}
+          onSetAttachMode={() => setMode("attach")}
+          onDeleteElement={() => setIsDeleteDialogOpen(true)}
+          onDeleteAttachment={() => {
+            if (selectedAttachmentId) void deleteAttachment(selectedAttachmentId);
+          }}
+          onOpenMedia={() => void openSelectedMedia(selectedMediaElement)}
+          canOpenMedia={canOpenSelectedMedia}
+          isOpeningMedia={isOpeningMedia}
+          onAddMedia={handleAddMedia}
+          onCreateCanvas={() => {
+            setIsCreateDialogOpen(true);
+            setMobileSheetOpen(false);
+          }}
+          onLogout={() => {
+            setIsLogoutDialogOpen(true);
+            setMobileSheetOpen(false);
+          }}
+        />
+      ) : null}
+
+      {/* Mobile right-side drawer */}
+      {isMobileViewport ? (
+        <>
+          <div
+            className={`fixed inset-0 z-40 bg-black/30 transition-opacity duration-200 ${isMobileMenuOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          <div
+            className={`fixed right-0 top-0 z-50 flex h-full w-64 flex-col gap-5 bg-white px-5 py-6 shadow-2xl transition-transform duration-200 dark:bg-zinc-900 ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"}`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-serif text-xs tracking-[0.2em] text-zinc-500 dark:text-zinc-400">
+                MENU
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Dark mode toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isDark ? (
+                  <Moon size={14} className="text-zinc-400" />
+                ) : (
+                  <Sun size={14} className="text-zinc-500" />
+                )}
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Dark mode</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isDark}
+                onClick={toggleDark}
+                className={`relative inline-flex h-[26px] w-[46px] flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isDark ? "bg-zinc-600" : "bg-zinc-200"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    isDark ? "translate-x-[22px]" : "translate-x-[2px]"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="mt-auto flex flex-col gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <Button
+                variant="outline"
+                className="h-11 w-full"
+                onClick={() => { focusAllElements(); setIsMobileMenuOpen(false); }}
+              >
+                Focus All
+              </Button>
+              <Button
+                variant="outline"
+                className="h-11 w-full"
+                onClick={() => { setIsCreateDialogOpen(true); setIsMobileMenuOpen(false); }}
+              >
+                New Canvas
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-11 w-full"
+                onClick={() => { setIsLogoutDialogOpen(true); setIsMobileMenuOpen(false); }}
+              >
+                Logout
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {longPressPreview !== null && (() => {        const previewEl = elements.find((el) => el.id === longPressPreview);
+        if (!previewEl) return null;
+        const data = previewEl.data ?? {};
+        const previewSrc = typeof data.previewSrc === "string" ? data.previewSrc : "";
+        const desc = getElementDescription(previewEl);
+        return (
+          <div
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6"
+            style={{ backdropFilter: "blur(18px)", backgroundColor: "rgba(0,0,0,0.45)" }}
+            onPointerDown={() => setLongPressPreview(null)}
+          >
+            {previewSrc ? (
+              <img
+                src={previewSrc}
+                alt={String(data.fileName ?? "")}
+                className="pointer-events-none max-h-[70vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+              />
+            ) : null}
+            {desc ? (
+              <p className="pointer-events-none max-w-lg rounded-xl bg-white/90 px-5 py-3 text-center text-sm leading-relaxed text-zinc-900 shadow-lg backdrop-blur-sm">
+                {desc}
+              </p>
+            ) : null}
+          </div>
+        );
+      })()}
+    </main>
+  );
+}

@@ -16,4 +16,20 @@ if (
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Use a promise-queue lock instead of the Web Locks API to prevent orphaned
+// locks caused by React Strict Mode double-mounting components.
+const pendingLocks = new Map<string, Promise<unknown>>();
+function promiseLock<T>(
+  name: string,
+  _acquireTimeout: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const current = pendingLocks.get(name) ?? Promise.resolve();
+  const next = current.then(fn);
+  pendingLocks.set(name, next.catch(() => {}));
+  return next;
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { lock: promiseLock },
+});
