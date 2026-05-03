@@ -2178,66 +2178,31 @@ export function CanvasEditor({
                 >
                   <feDropShadow
                     dx="0"
-                    dy="4"
-                    stdDeviation="5"
+                    dy="5"
+                    stdDeviation="6"
                     floodColor="#000000"
-                    floodOpacity="0.85"
+                    floodOpacity="0.7"
                   />
-                </filter>
-                <filter
-                  id="ropeFiber"
-                  x="-5%"
-                  y="-5%"
-                  width="110%"
-                  height="110%"
-                  colorInterpolationFilters="sRGB"
-                >
-                  <feTurbulence
-                    type="fractalNoise"
-                    baseFrequency="0.05 1.2"
-                    numOctaves="4"
-                    seed="9"
-                    result="noise"
-                  />
-                  <feColorMatrix
-                    in="noise"
-                    type="matrix"
-                    values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  4 0 0 0 -1.5"
-                    result="fibers"
-                  />
-                  <feComposite in="fibers" in2="SourceGraphic" operator="in" />
                 </filter>
                 <pattern
                   id="ropeTexture"
                   x="0"
                   y="0"
-                  width="18"
-                  height="18"
+                  width="14"
+                  height="14"
                   patternUnits="userSpaceOnUse"
-                  patternTransform="rotate(52)"
+                  patternTransform="rotate(50)"
                 >
-                  {/* groove background */}
-                  <rect width="18" height="18" fill="#000000" />
-                  {/* Strand A body */}
-                  <rect x="0" y="0" width="8" height="18" fill="#222222" />
-                  {/* Strand A left edge shadow */}
-                  <rect x="0" y="0" width="0.8" height="18" fill="#000000" />
-                  {/* Strand A highlight — cylindrical shading */}
-                  <rect x="1.2" y="0" width="2.5" height="18" fill="rgba(255,255,255,0.20)" />
-                  {/* Strand A right fade into groove */}
-                  <rect x="5.5" y="0" width="2.5" height="18" fill="#0c0c0c" />
-                  {/* Groove */}
-                  <rect x="8" y="0" width="1.8" height="18" fill="#000000" />
-                  {/* Strand B body */}
-                  <rect x="9.8" y="0" width="8" height="18" fill="#222222" />
-                  {/* Strand B left edge shadow */}
-                  <rect x="9.8" y="0" width="0.8" height="18" fill="#000000" />
-                  {/* Strand B highlight */}
-                  <rect x="11" y="0" width="2.5" height="18" fill="rgba(255,255,255,0.20)" />
-                  {/* Strand B right fade */}
-                  <rect x="15.3" y="0" width="2.5" height="18" fill="#0c0c0c" />
-                  {/* Edge groove (wraps to left) */}
-                  <rect x="17.8" y="0" width="0.2" height="18" fill="#000000" />
+                  {/* groove */}
+                  <rect width="14" height="14" fill="#000000" />
+                  {/* strand A */}
+                  <rect x="1" y="0" width="5" height="14" fill="#2a2a2a" />
+                  {/* strand A inner highlight */}
+                  <rect x="1.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                  {/* strand B */}
+                  <rect x="8" y="0" width="5" height="14" fill="#2a2a2a" />
+                  {/* strand B inner highlight */}
+                  <rect x="8.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
                 </pattern>
               </defs>
               {attachments.map((attachment) => {
@@ -2265,10 +2230,10 @@ export function CanvasEditor({
                       d={path}
                       fill="none"
                       stroke="#000000"
-                      strokeWidth={22}
+                      strokeWidth={26}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.55}
+                      opacity={0.5}
                       filter="url(#stringShadow)"
                       vectorEffect="non-scaling-stroke"
                       className="pointer-events-none"
@@ -2278,7 +2243,7 @@ export function CanvasEditor({
                       d={path}
                       fill="none"
                       stroke="transparent"
-                      strokeWidth={24}
+                      strokeWidth={28}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
@@ -2289,47 +2254,23 @@ export function CanvasEditor({
                         setSelectedAttachmentId(attachment.id);
                       }}
                     />
-                    {/* Outer dark rim — clean rope edge */}
+                    {/* Cartoon bold black outline */}
                     <path
                       d={path}
                       fill="none"
                       stroke="#000000"
-                      strokeWidth={17}
+                      strokeWidth={20}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
                       className="pointer-events-none"
                     />
-                    {/* Twisted strand pattern */}
+                    {/* Diagonal strand pattern */}
                     <path
                       d={path}
                       fill="none"
                       stroke="url(#ropeTexture)"
-                      strokeWidth={15}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      vectorEffect="non-scaling-stroke"
-                      className="pointer-events-none"
-                    />
-                    {/* Fiber texture overlay */}
-                    <path
-                      d={path}
-                      fill="none"
-                      stroke="rgba(0,0,0,0.8)"
-                      strokeWidth={15}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      filter="url(#ropeFiber)"
-                      opacity={0.55}
-                      vectorEffect="non-scaling-stroke"
-                      className="pointer-events-none"
-                    />
-                    {/* Cylindrical gloss */}
-                    <path
-                      d={path}
-                      fill="none"
-                      stroke="rgba(255,255,255,0.10)"
-                      strokeWidth={6}
+                      strokeWidth={16}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
@@ -2341,10 +2282,10 @@ export function CanvasEditor({
                         d={path}
                         fill="none"
                         stroke="#ffe08a"
-                        strokeWidth={19}
+                        strokeWidth={22}
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        opacity={0.25}
+                        opacity={0.35}
                         vectorEffect="non-scaling-stroke"
                         className="pointer-events-none"
                       />

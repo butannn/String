@@ -67,26 +67,29 @@ export function getAttachmentPath(
   const random = createSeededRandom(
     hashSeed(`${seed}:${intensity}:${phaseShift}`),
   );
-  const segmentCount = Math.max(7, Math.min(16, Math.round(distance / 65)));
+  const segmentCount = Math.max(4, Math.min(8, Math.round(distance / 100)));
   const baseAmplitude =
-    Math.max(12, Math.min(42, distance * 0.075)) * intensity;
+    Math.max(6, Math.min(25, distance * 0.04)) * intensity;
 
+  // Catenary sag — rope droops downward under its own weight.
+  // Scale with horizontal span so nearly-vertical ropes sag less.
   const horizontalWeight = Math.abs(dx) / Math.max(1, distance);
   const catSag =
-    Math.min(70, distance * 0.09 + 14) * horizontalWeight * intensity;
+    Math.min(130, distance * 0.16 + 28) * horizontalWeight * intensity;
 
   const points: Array<{ x: number; y: number }> = [];
   for (let i = 0; i <= segmentCount; i += 1) {
     const t = i / segmentCount;
-    const jitter = (random() - 0.5) * 2;
-    const slowWave = Math.sin((t + phaseShift) * Math.PI * 1.8);
-    const midWave = Math.sin((t * 2.8 + phaseShift * 0.7) * Math.PI);
+    const jitter = (random() - 0.5) * 0.4;
+    // Single slow wave — river-like wide arc, one gentle S-bend
+    const slowWave = Math.sin((t + phaseShift) * Math.PI * 0.85);
     const profile = Math.sin(Math.PI * t);
     const offset =
-      (slowWave * 0.65 + midWave * 0.25 + jitter * 0.1) *
+      (slowWave * 0.92 + jitter * 0.08) *
       baseAmplitude *
       profile;
 
+    // Gravity pulls the midpoint downward; ends are pinned.
     const sag = catSag * profile;
 
     points.push({
