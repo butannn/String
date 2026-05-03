@@ -41,7 +41,7 @@ TO authenticated
 WITH CHECK (
   bucket_id = 'canvas-media'
   AND split_part(name, '/', 1) = 'canvases'
-  AND split_part(name, '/', 3) = 'media'
+  AND split_part(name, '/', 3) IN ('media', 'previews')
   AND EXISTS (
     SELECT 1
     FROM public.canvases c
