@@ -22,8 +22,8 @@ export function AttachmentLayer({
             dx="0"
             dy="5"
             stdDeviation="6"
-            floodColor="#000000"
-            floodOpacity="0.7"
+            floodColor="#4a2f10"
+            floodOpacity="0.5"
           />
         </filter>
       </defs>
@@ -55,27 +55,35 @@ export function AttachmentLayer({
                 patternUnits="userSpaceOnUse"
                 patternTransform={`rotate(${ropeAngle + 45})`}
               >
-                {/* groove */}
-                <rect width="14" height="14" fill="#000000" />
+                {/* groove (very dark for strong contrast) */}
+                <rect width="14" height="14" fill="#2a1406" />
                 {/* strand A */}
-                <rect x="1" y="0" width="5" height="14" fill="#2a2a2a" />
+                <rect x="1" y="0" width="5" height="14" fill="#c8a97a" />
+                {/* strand A left edge shadow */}
+                <rect x="1" y="0" width="0.8" height="14" fill="rgba(15,5,0,0.60)" />
                 {/* strand A inner highlight */}
-                <rect x="1.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                <rect x="2.2" y="0" width="1.8" height="14" fill="rgba(255,240,200,0.35)" />
+                {/* strand A right edge shadow */}
+                <rect x="5.2" y="0" width="0.8" height="14" fill="rgba(15,5,0,0.50)" />
                 {/* strand B */}
-                <rect x="8" y="0" width="5" height="14" fill="#2a2a2a" />
+                <rect x="8" y="0" width="5" height="14" fill="#b8935f" />
+                {/* strand B left edge shadow */}
+                <rect x="8" y="0" width="0.8" height="14" fill="rgba(15,5,0,0.60)" />
                 {/* strand B inner highlight */}
-                <rect x="8.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                <rect x="9.2" y="0" width="1.8" height="14" fill="rgba(255,240,200,0.25)" />
+                {/* strand B right edge shadow */}
+                <rect x="12.2" y="0" width="0.8" height="14" fill="rgba(15,5,0,0.45)" />
               </pattern>
             </defs>
             {/* Drop shadow */}
             <path
               d={path}
               fill="none"
-              stroke="#000000"
-              strokeWidth={26}
+              stroke="#4a2f10"
+              strokeWidth={16}
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity={0.5}
+              opacity={0.4}
               filter="url(#stringShadow)"
               vectorEffect="non-scaling-stroke"
               className="pointer-events-none"
@@ -85,7 +93,7 @@ export function AttachmentLayer({
               d={path}
               fill="none"
               stroke="transparent"
-              strokeWidth={28}
+              strokeWidth={18}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
@@ -95,12 +103,12 @@ export function AttachmentLayer({
                 onSelectAttachment(attachment.id);
               }}
             />
-            {/* Cartoon bold black outline */}
+            {/* Rope outline */}
             <path
               d={path}
               fill="none"
-              stroke="#000000"
-              strokeWidth={20}
+              stroke="#6b4423"
+              strokeWidth={12}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
@@ -111,7 +119,7 @@ export function AttachmentLayer({
               d={path}
               fill="none"
               stroke={`url(#${patternId})`}
-              strokeWidth={16}
+              strokeWidth={10}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
@@ -123,7 +131,7 @@ export function AttachmentLayer({
                 d={path}
                 fill="none"
                 stroke="#ffe08a"
-                strokeWidth={22}
+                strokeWidth={14}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 opacity={0.35}

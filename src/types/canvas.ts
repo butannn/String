@@ -41,8 +41,8 @@ export const DEFAULT_DESCRIPTION_STYLE: DescriptionStyle = {
   fontWeight: "normal",
   fontStyle: "normal",
   textDecoration: "none",
-  textColor: "#1f2937",
-  boxColor: "#e5e7eb",
+  textColor: "#2d1a08",
+  boxColor: "#f0dfc0",
 };
 
 export type MediaViewerState = {

@@ -29,7 +29,7 @@ export function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-zinc-100 p-4">
-      <section className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
+      <section className="w-full max-w-md rounded-xl border border-zinc-200 bg-zinc-50 p-8 shadow-sm">
         <p className="mb-2 font-serif text-sm tracking-[0.2em] text-zinc-500">
           STRING
         </p>

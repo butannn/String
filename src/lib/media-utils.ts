@@ -4,8 +4,11 @@ export const STORAGE_BUCKET =
   import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "canvas-media";
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
-export const PREVIEW_IMAGE_MAX_EDGE = 960;
-export const PREVIEW_IMAGE_QUALITY = 0.72;
+export const PREVIEW_IMAGE_MAX_EDGE = 800;
+export const PREVIEW_IMAGE_QUALITY = 0.60;
+
+export const COMPRESSED_IMAGE_MAX_EDGE = 1920;
+export const COMPRESSED_IMAGE_QUALITY = 0.65;
 
 export type PreviewTransform = {
   width?: number;
@@ -88,6 +91,7 @@ function canvasToPreviewAsset(
   canvas: HTMLCanvasElement,
   sourceWidth: number,
   sourceHeight: number,
+  quality: number = PREVIEW_IMAGE_QUALITY,
 ) {
   return new Promise<GeneratedPreviewAsset>((resolve, reject) => {
     const resolveAsset = (
@@ -115,11 +119,11 @@ function canvasToPreviewAsset(
             resolveAsset(fallbackBlob, "jpg", "image/jpeg");
           },
           "image/jpeg",
-          PREVIEW_IMAGE_QUALITY,
+          quality,
         );
       },
       "image/webp",
-      PREVIEW_IMAGE_QUALITY,
+      quality,
     );
   });
 }
@@ -169,6 +173,58 @@ export function createImagePreviewAsset(file: File) {
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
       reject(new Error("Could not create image preview"));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+export function createCompressedImageAsset(file: File) {
+  return new Promise<GeneratedPreviewAsset>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = async () => {
+      try {
+        const fitted = fitMediaDimensions(
+          image.naturalWidth,
+          image.naturalHeight,
+          COMPRESSED_IMAGE_MAX_EDGE,
+          COMPRESSED_IMAGE_MAX_EDGE,
+        );
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+          throw new Error("Could not create compression canvas");
+        }
+
+        canvas.width = fitted.width;
+        canvas.height = fitted.height;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        resolve(
+          await canvasToPreviewAsset(
+            canvas,
+            image.naturalWidth,
+            image.naturalHeight,
+            COMPRESSED_IMAGE_QUALITY,
+          ),
+        );
+      } catch (compressError) {
+        reject(
+          compressError instanceof Error
+            ? compressError
+            : new Error("Could not compress image"),
+        );
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not compress image"));
     };
 
     image.src = objectUrl;

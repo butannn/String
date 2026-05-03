@@ -5,6 +5,7 @@ type CanvasElementProps = {
   element: CanvasElementRecord;
   isSelected: boolean;
   isAttachTarget: boolean;
+  isDark: boolean;
   description: string;
   descriptionStyle: DescriptionStyle;
   onSelect: (event: React.MouseEvent<HTMLElement>) => void;
@@ -18,6 +19,7 @@ export function CanvasElement({
   element,
   isSelected,
   isAttachTarget,
+  isDark,
   description,
   descriptionStyle,
   onSelect,
@@ -43,16 +45,18 @@ export function CanvasElement({
       }}
     >
       <article
-        className={`overflow-hidden rounded-lg border bg-white dark:bg-zinc-900 ${
-          isSelected
-            ? "border-zinc-900 ring-2 ring-zinc-900/20 dark:border-zinc-300 dark:ring-zinc-300/20"
-            : "border-zinc-200 dark:border-zinc-700"
-        } ${isAttachTarget ? "cursor-cell border-emerald-500" : "cursor-pointer"}`}
+        className={`overflow-hidden rounded-lg bg-stone-200 dark:bg-zinc-900 ${
+          isAttachTarget ? "cursor-cell ring-2 ring-emerald-500" : "cursor-pointer"
+        }`}
         style={{
           height: `${element.height}px`,
           boxShadow: isSelected
-            ? "0 10px 24px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.18)"
-            : "0 8px 18px rgba(0,0,0,0.16), 0 1px 4px rgba(0,0,0,0.1)",
+            ? isDark
+              ? "0 0 0 2px rgba(255,235,185,0.18), 0 20px 48px rgba(255,220,140,0.22), 0 6px 16px rgba(255,200,100,0.18)"
+              : "0 0 0 2px rgba(80,35,0,0.12), 0 20px 48px rgba(60,25,0,0.55), 0 6px 16px rgba(60,25,0,0.38)"
+            : isDark
+              ? "0 10px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.35)"
+              : "0 10px 24px rgba(50,25,5,0.32), 0 2px 6px rgba(50,25,5,0.20)",
         }}
         onClick={onSelect}
         onPointerDown={onPointerDown}
@@ -67,7 +71,7 @@ export function CanvasElement({
               alt={fileName}
               loading="lazy"
               decoding="async"
-              className="block h-full w-full bg-zinc-100 object-contain"
+              className="block h-full w-full bg-stone-200 object-contain"
             />
           ) : (
             <div className="grid h-full w-full place-items-center bg-zinc-100 px-4 text-center text-xs text-zinc-500">

@@ -2224,26 +2224,26 @@ export function CanvasEditor({
                         patternTransform={`rotate(${ropeAngle + 45})`}
                       >
                         {/* groove */}
-                        <rect width="14" height="14" fill="#000000" />
+                        <rect width="14" height="14" fill="#7a5c3a" />
                         {/* strand A */}
-                        <rect x="1" y="0" width="5" height="14" fill="#2a2a2a" />
+                        <rect x="1" y="0" width="5" height="14" fill="#c8a97a" />
                         {/* strand A inner highlight */}
-                        <rect x="1.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                        <rect x="1.8" y="0" width="1.5" height="14" fill="rgba(255,245,220,0.30)" />
                         {/* strand B */}
-                        <rect x="8" y="0" width="5" height="14" fill="#2a2a2a" />
+                        <rect x="8" y="0" width="5" height="14" fill="#b8935f" />
                         {/* strand B inner highlight */}
-                        <rect x="8.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                        <rect x="8.8" y="0" width="1.5" height="14" fill="rgba(255,245,220,0.20)" />
                       </pattern>
                     </defs>
                     {/* Drop shadow */}
                     <path
                       d={path}
                       fill="none"
-                      stroke="#000000"
+                      stroke="#4a2f10"
                       strokeWidth={16}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.5}
+                      opacity={0.4}
                       filter="url(#stringShadow)"
                       vectorEffect="non-scaling-stroke"
                       className="pointer-events-none"
@@ -2264,11 +2264,11 @@ export function CanvasEditor({
                         setSelectedAttachmentId(attachment.id);
                       }}
                     />
-                    {/* Cartoon bold black outline */}
+                    {/* Rope outline */}
                     <path
                       d={path}
                       fill="none"
-                      stroke="#000000"
+                      stroke="#6b4423"
                       strokeWidth={12}
                       strokeLinecap="round"
                       strokeLinejoin="round"

@@ -17,7 +17,7 @@ export function CanvasHeader({
   onOpenMobileMenu,
 }: CanvasHeaderProps) {
   return (
-    <header className="border-b border-zinc-200 bg-white px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900 md:px-4">
+    <header className="border-b border-zinc-200 bg-zinc-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900 md:px-4">
       <div className="flex items-center gap-2">
         <p className="mr-1 font-serif text-xs tracking-[0.2em] text-zinc-500 dark:text-zinc-400 md:mr-2 md:text-sm">
           STRING
@@ -25,7 +25,7 @@ export function CanvasHeader({
 
         {canvases.length > 1 ? (
           <select
-            className="h-9 max-w-[180px] rounded-md border border-zinc-300 bg-white px-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 md:max-w-none md:px-3"
+            className="h-9 max-w-[180px] rounded-md border border-zinc-300 bg-zinc-50 px-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 md:max-w-none md:px-3"
             value={activeCanvasId ?? ""}
             onChange={(event) => onSelectCanvas(event.target.value)}
           >

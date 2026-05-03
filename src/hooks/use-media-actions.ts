@@ -4,6 +4,7 @@ import { insertRow, updateSingleRow } from "@/lib/data-api";
 import { supabase } from "@/lib/supabase";
 import {
   STORAGE_BUCKET,
+  createCompressedImageAsset,
   createImagePreviewAsset,
   createSignedMediaUrl,
   createVideoPreviewAsset,
@@ -102,8 +103,10 @@ export function useMediaActions({
     const localObjectUrl = trackTemporaryUrl(URL.createObjectURL(file));
 
     let previewAsset = null;
+    let compressedImageAsset = null;
     if (elementType === "image") {
       try { previewAsset = await createImagePreviewAsset(file); } catch { /* non-fatal */ }
+      try { compressedImageAsset = await createCompressedImageAsset(file); } catch { /* non-fatal */ }
     }
     if (elementType === "video") {
       try { previewAsset = await createVideoPreviewAsset(file); } catch { /* non-fatal */ }
@@ -207,14 +210,21 @@ export function useMediaActions({
 
     try {
       const ext = file.name.split(".").pop() ?? "bin";
-      const path = `canvases/${canvasId}/media/${crypto.randomUUID()}.${ext}`;
+      const isCompressedUpload = elementType === "image" && compressedImageAsset !== null;
+      const uploadBlob: File | Blob = isCompressedUpload ? compressedImageAsset!.blob : file;
+      const uploadExt = isCompressedUpload ? compressedImageAsset!.extension : ext;
+      const uploadContentType = isCompressedUpload ? compressedImageAsset!.contentType : file.type;
+      const uploadMimeType = isCompressedUpload ? compressedImageAsset!.contentType : file.type;
+      const uploadFileSize = isCompressedUpload ? compressedImageAsset!.blob.size : file.size;
+
+      const path = `canvases/${canvasId}/media/${crypto.randomUUID()}.${uploadExt}`;
       let previewStoragePath: string | null = previewAsset
         ? `canvases/${canvasId}/previews/${crypto.randomUUID()}.${previewAsset.extension}`
         : null;
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, file, { contentType: file.type });
+        .upload(path, uploadBlob, { contentType: uploadContentType });
 
       if (uploadError) throw new Error(uploadError.message);
 
@@ -234,8 +244,8 @@ export function useMediaActions({
           storage_path: path,
           media_type: elementType,
           file_name: file.name,
-          file_size: file.size,
-          mime_type: file.type,
+          file_size: uploadFileSize,
+          mime_type: uploadMimeType,
         });
         mediaAssetId = mediaAsset.id;
       } catch { /* non-fatal */ }
@@ -254,7 +264,7 @@ export function useMediaActions({
             storagePath: path,
             previewStoragePath,
             ...(mediaAssetId ? { mediaAssetId } : {}),
-            mimeType: file.type,
+            mimeType: uploadMimeType,
             fileName: file.name,
             mediaHeight,
           },
@@ -337,21 +347,23 @@ export function useMediaActions({
         ? data.fullSrc
         : null;
 
-    setMediaViewer({
-      elementId: element.id,
-      elementType: element.element_type,
-      fileName,
-      mimeType,
-      src: cachedFullSrc,
-    });
+    // If we already have the src cached, open immediately with animation
+    if (cachedFullSrc) {
+      setMediaViewer({
+        elementId: element.id,
+        elementType: element.element_type,
+        fileName,
+        mimeType,
+        src: cachedFullSrc,
+      });
+      return;
+    }
 
-    if (cachedFullSrc) return;
-
+    // No cached src — fetch silently first, then open viewer so animation plays cleanly
     const storagePath =
       typeof data.storagePath === "string" ? data.storagePath : "";
 
     if (!storagePath) {
-      setMediaViewer(null);
       setError("This media is missing a storage path.");
       return;
     }
@@ -361,6 +373,17 @@ export function useMediaActions({
       const fullSrc = await createSignedMediaUrl(storagePath, {
         cacheNonce: element.updated_at,
       });
+
+      // For images, wait until the browser has fully decoded it so the
+      // open animation plays against an already-rendered frame (no jank).
+      if (element.element_type === "image") {
+        await new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve();
+          img.onerror = () => resolve(); // open anyway on error
+          img.src = fullSrc;
+        });
+      }
 
       setElements((previous) =>
         previous.map((el) => {
@@ -377,7 +400,6 @@ export function useMediaActions({
         src: fullSrc,
       });
     } catch (openError) {
-      setMediaViewer(null);
       setError(
         openError instanceof Error ? openError.message : "Could not open media",
       );

@@ -39,7 +39,7 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          "z-50 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-md",
+          "z-50 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50 shadow-md",
           className,
         )}
         {...props}

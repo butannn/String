@@ -24,7 +24,7 @@ import { CreateCanvasDialog } from "@/components/canvas/dialogs/create-canvas-di
 import { Button } from "@/components/ui/button";
 import { useDarkMode } from "@/hooks/use-dark-mode";
 import { Moon, Sun, X } from "lucide-react";
-import type { CanvasRecord, ElementType, Mode, PanState } from "@/types/canvas";
+import type { CanvasRecord, ElementType, Mode, OpenableCanvasElementRecord, PanState } from "@/types/canvas";
 
 type CanvasEditorProps = {
   userId: string;
@@ -69,7 +69,6 @@ export function CanvasEditor({
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [longPressPreview, setLongPressPreview] = useState<string | null>(null);
 
   // Mobile viewport detection
   useEffect(() => {
@@ -155,6 +154,7 @@ export function CanvasEditor({
     createElement,
     handleMediaFile,
     openSelectedMedia,
+    openElementMedia,
   } = useMediaActions({
     activeCanvasId,
     userId,
@@ -303,7 +303,6 @@ export function CanvasEditor({
       longPressTriggeredRef.current = true;
       pendingElementDragRef.current = null;
       setSelectedId(elementId);
-      setLongPressPreview(elementId);
     }, 600);
   }
 
@@ -365,6 +364,7 @@ export function CanvasEditor({
                   element={element}
                   isSelected={isSelected}
                   isAttachTarget={isAttachTarget}
+                  isDark={isDark}
                   description={getElementDescription(element)}
                   descriptionStyle={getElementDescriptionStyle(element)}
                   onSelect={(event) => {
@@ -380,6 +380,18 @@ export function CanvasEditor({
                     }
 
                     setSelectedAttachmentId(null);
+
+                    // Single tap on image/video → open lightbox viewer
+                    if (
+                      element.element_type === "image" ||
+                      element.element_type === "video"
+                    ) {
+                      void openElementMedia(
+                        element as OpenableCanvasElementRecord,
+                      );
+                      return;
+                    }
+
                     setSelectedId(element.id);
                   }}
                   onPointerDown={(event) => {
@@ -387,9 +399,6 @@ export function CanvasEditor({
 
                     event.preventDefault();
                     event.stopPropagation();
-
-                    setSelectedId(element.id);
-                    setSelectedAttachmentId(null);
 
                     pendingElementDragRef.current = {
                       id: element.id,
@@ -411,7 +420,7 @@ export function CanvasEditor({
         </CanvasViewport>
 
         {!isMobileViewport && (
-          <aside className="flex w-60 flex-col gap-3 overflow-y-auto border-l border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <aside className="flex w-60 flex-col gap-3 overflow-y-auto border-l border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
             {/* Dark mode toggle */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -637,7 +646,7 @@ export function CanvasEditor({
             onClick={() => setIsMobileMenuOpen(false)}
           />
           <div
-            className={`fixed right-0 top-0 z-50 flex h-full w-64 flex-col gap-5 bg-white px-5 py-6 shadow-2xl transition-transform duration-200 dark:bg-zinc-900 ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"}`}
+            className={`fixed right-0 top-0 z-50 flex h-full w-64 flex-col gap-5 bg-zinc-50 px-5 py-6 shadow-2xl transition-transform duration-200 dark:bg-zinc-900 ${isMobileMenuOpen ? "translate-x-0" : "translate-x-full"}`}
           >
             <div className="flex items-center justify-between">
               <span className="font-serif text-xs tracking-[0.2em] text-zinc-500 dark:text-zinc-400">
@@ -707,32 +716,7 @@ export function CanvasEditor({
         </>
       ) : null}
 
-      {longPressPreview !== null && (() => {        const previewEl = elements.find((el) => el.id === longPressPreview);
-        if (!previewEl) return null;
-        const data = previewEl.data ?? {};
-        const previewSrc = typeof data.previewSrc === "string" ? data.previewSrc : "";
-        const desc = getElementDescription(previewEl);
-        return (
-          <div
-            className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6"
-            style={{ backdropFilter: "blur(18px)", backgroundColor: "rgba(0,0,0,0.45)" }}
-            onPointerDown={() => setLongPressPreview(null)}
-          >
-            {previewSrc ? (
-              <img
-                src={previewSrc}
-                alt={String(data.fileName ?? "")}
-                className="pointer-events-none max-h-[70vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
-              />
-            ) : null}
-            {desc ? (
-              <p className="pointer-events-none max-w-lg rounded-xl bg-white/90 px-5 py-3 text-center text-sm leading-relaxed text-zinc-900 shadow-lg backdrop-blur-sm">
-                {desc}
-              </p>
-            ) : null}
-          </div>
-        );
-      })()}
+      {null /* longPressPreview removed — long press selects element in place */}
     </main>
   );
 }

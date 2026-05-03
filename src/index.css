@@ -9,6 +9,19 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Warm cream/brown palette — overrides Tailwind zinc */
+  --color-zinc-50:  #fdf8f2;
+  --color-zinc-100: #f5e8d5;
+  --color-zinc-200: #e0c9a2;
+  --color-zinc-300: #c9a87a;
+  --color-zinc-400: #aa8555;
+  --color-zinc-500: #8a6640;
+  --color-zinc-600: #6e4e2d;
+  --color-zinc-700: #5a3c1c;
+  --color-zinc-800: #3d2810;
+  --color-zinc-900: #251408;
+  --color-zinc-950: #160a04;
 }
 
 * {
@@ -27,19 +40,24 @@ body {
   color: #111;
   background: radial-gradient(
     circle at 15% 10%,
-    #f5f5f4 0%,
-    #fafaf9 45%,
-    #f4f4f5 100%
+    #f5ead8 0%,
+    #faf3e8 45%,
+    #f0e6d3 100%
   );
 }
 
 html.dark body {
   color: #e4e4e7;
-  background: #18181b;
+  background: #1a1108;
 }
 
 .canvas-viewport {
   touch-action: none;
+  background-color: #f7ede0 !important;
+}
+
+html.dark .canvas-viewport {
+  background-color: #1e1409 !important;
 }
 
 .vignette-overlay {

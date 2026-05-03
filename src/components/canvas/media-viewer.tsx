@@ -1,13 +1,6 @@
-import { hexToRgba } from "@/lib/media-utils";
-import {
-  getElementDescription,
-  getElementDescriptionStyle,
-} from "@/hooks/use-description";
-import type {
-  CanvasElementRecord,
-  MediaViewerState,
-} from "@/types/canvas";
-import { DEFAULT_DESCRIPTION_STYLE } from "@/types/canvas";
+import { useEffect, useState } from "react";
+import { getElementDescription } from "@/hooks/use-description";
+import type { CanvasElementRecord, MediaViewerState } from "@/types/canvas";
 
 type MediaViewerProps = {
   viewer: MediaViewerState | null;
@@ -16,74 +9,113 @@ type MediaViewerProps = {
 };
 
 export function MediaViewer({ viewer, onClose, elements }: MediaViewerProps) {
-  if (!viewer) return null;
+  const [alive, setAlive] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (viewer) {
+      setAlive(true);
+      const raf = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setVisible(true));
+      });
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setVisible(false);
+      const t = setTimeout(() => setAlive(false), 340);
+      return () => clearTimeout(t);
+    }
+  }, [viewer]);
+
+  if (!alive || !viewer) return null;
 
   const viewerElement = elements.find((el) => el.id === viewer.elementId);
-  const viewerDescription = viewerElement
-    ? getElementDescription(viewerElement)
-    : "";
-  const viewerDescriptionStyle = viewerElement
-    ? getElementDescriptionStyle(viewerElement)
-    : DEFAULT_DESCRIPTION_STYLE;
+  const viewerDescription = viewerElement ? getElementDescription(viewerElement) : "";
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+      className="fixed inset-0 z-[70] flex flex-col items-center justify-center overflow-hidden"
+      style={{
+        backdropFilter: "blur(28px) saturate(180%)",
+        WebkitBackdropFilter: "blur(28px) saturate(180%)",
+        backgroundColor: visible ? "rgba(0,0,0,0.48)" : "rgba(0,0,0,0)",
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.3s ease, background-color 0.3s ease",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
     >
-      <button
-        type="button"
-        className="absolute right-4 top-4 rounded-full border border-white/20 bg-white/10 px-3 py-2 text-sm text-white backdrop-blur"
-        onClick={onClose}
-      >
-        Close
-      </button>
-
       <div
-        className="flex max-h-full max-w-[min(94vw,1280px)] flex-col items-center gap-3"
-        onClick={(event) => event.stopPropagation()}
+        className="flex max-w-[min(94vw,960px)] flex-col items-center gap-5 px-4 pb-14 pt-10"
+        style={{
+          transform: visible
+            ? "scale(1) translateY(0px)"
+            : "scale(0.82) translateY(36px)",
+          opacity: visible ? 1 : 0,
+          transition:
+            "transform 0.38s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s ease",
+        }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-sm text-white/75">{viewer.fileName}</div>
-
-        {viewer.src ? (
-          viewer.elementType === "image" ? (
-            <img
-              src={viewer.src}
-              alt={viewer.fileName}
-              className="max-h-[85vh] max-w-full rounded-2xl bg-white shadow-2xl"
-            />
+        {/* Media + description in a shared width container */}
+        <div className="flex w-fit max-w-full flex-col gap-3">
+          {viewer.src ? (
+            viewer.elementType === "image" ? (
+              <img
+                src={viewer.src}
+                alt={viewer.fileName}
+                className="block max-h-[72vh] max-w-full rounded-[22px]"
+                style={{
+                  objectFit: "contain",
+                  boxShadow:
+                    "0 24px 64px rgba(0,0,0,0.65), 0 4px 18px rgba(0,0,0,0.4)",
+                }}
+              />
+            ) : (
+              <video
+                src={viewer.src}
+                controls
+                autoPlay
+                playsInline
+                className="block max-h-[72vh] max-w-full rounded-[22px] bg-black"
+                style={{
+                  boxShadow:
+                    "0 24px 64px rgba(0,0,0,0.65), 0 4px 18px rgba(0,0,0,0.4)",
+                }}
+              />
+            )
           ) : (
-            <video
-              src={viewer.src}
-              controls
-              autoPlay
-              playsInline
-              className="max-h-[85vh] max-w-full rounded-2xl bg-black shadow-2xl"
-            />
-          )
-        ) : (
-          <div className="rounded-xl border border-white/15 bg-white/10 px-5 py-4 text-sm text-white">
-            Loading full media...
-          </div>
-        )}
+            <div
+              className="rounded-2xl px-6 py-4 text-sm text-white/80"
+              style={{
+                backdropFilter: "blur(16px) saturate(180%)",
+                WebkitBackdropFilter: "blur(16px) saturate(180%)",
+                background: "rgba(255,255,255,0.1)",
+                border: "0.5px solid rgba(255,255,255,0.2)",
+              }}
+            >
+              Loading...
+            </div>
+          )}
 
-        {viewerDescription ? (
-          <div
-            className="w-full max-w-[min(94vw,1280px)] rounded-xl border px-4 py-3 text-sm leading-relaxed shadow"
-            style={{
-              color: viewerDescriptionStyle.textColor,
-              fontWeight: viewerDescriptionStyle.fontWeight,
-              fontStyle: viewerDescriptionStyle.fontStyle,
-              textDecorationLine: viewerDescriptionStyle.textDecoration,
-              backgroundColor: hexToRgba(viewerDescriptionStyle.boxColor, 0.85),
-              borderColor: hexToRgba(viewerDescriptionStyle.boxColor, 0.9),
-            }}
-          >
-            {viewerDescription}
-          </div>
-        ) : null}
+          {viewerDescription ? (
+            <div
+              className="w-full text-center text-sm leading-relaxed text-white/92"
+              style={{
+                backdropFilter: "blur(24px) saturate(180%)",
+                WebkitBackdropFilter: "blur(24px) saturate(180%)",
+                background: "rgba(255,255,255,0.12)",
+                border: "0.5px solid rgba(255,255,255,0.26)",
+                borderRadius: "14px",
+                padding: "11px 16px",
+                boxShadow:
+                  "0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.18)",
+              }}
+            >
+              {viewerDescription}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
