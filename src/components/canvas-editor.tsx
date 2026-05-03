@@ -2240,7 +2240,7 @@ export function CanvasEditor({
                       d={path}
                       fill="none"
                       stroke="#000000"
-                      strokeWidth={26}
+                      strokeWidth={16}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       opacity={0.5}
@@ -2253,7 +2253,7 @@ export function CanvasEditor({
                       d={path}
                       fill="none"
                       stroke="transparent"
-                      strokeWidth={28}
+                      strokeWidth={18}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
@@ -2269,7 +2269,7 @@ export function CanvasEditor({
                       d={path}
                       fill="none"
                       stroke="#000000"
-                      strokeWidth={20}
+                      strokeWidth={12}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
@@ -2280,7 +2280,7 @@ export function CanvasEditor({
                       d={path}
                       fill="none"
                       stroke={`url(#${patternId})`}
-                      strokeWidth={16}
+                      strokeWidth={10}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
@@ -2292,7 +2292,7 @@ export function CanvasEditor({
                         d={path}
                         fill="none"
                         stroke="#ffe08a"
-                        strokeWidth={22}
+                        strokeWidth={14}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         opacity={0.35}
