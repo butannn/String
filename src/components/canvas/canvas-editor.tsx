@@ -565,7 +565,10 @@ export function CanvasEditor({
       <MediaViewer
         viewer={mediaViewer}
         onClose={() => setMediaViewer(null)}
-        elements={elements}
+        descriptionDraft={descriptionDraft}
+        setDescriptionDraft={setDescriptionDraft}
+        isSavingDescription={isSavingDescription}
+        onSaveDescription={saveSelectedDescription}
       />
 
       {/* Hidden file inputs */}
@@ -716,6 +719,30 @@ export function CanvasEditor({
                 />
               </button>
             </div>
+
+            {canvases.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Canvases
+                </span>
+                <div className="flex flex-col gap-1">
+                  {canvases.map((canvas) => (
+                    <button
+                      key={canvas.id}
+                      type="button"
+                      onClick={() => { onSelectCanvas(canvas.id); setIsMobileMenuOpen(false); }}
+                      className={`h-10 w-full rounded-md px-3 text-left text-sm transition-colors ${
+                        canvas.id === activeCanvasId
+                          ? "bg-zinc-200 font-medium text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100"
+                          : "text-zinc-600 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      {canvas.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-auto flex flex-col gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <Button

@@ -36,6 +36,8 @@ export function AttachmentLayer({
   // Refs to individual SVG path elements for imperative updates during drag.
   // Per attachment: [hit, outline, texture, glow]
   const pathRefsMap = useRef(new Map<string, Array<SVGPathElement | null>>());
+  // Refs to <pattern> elements so patternTransform can be updated during drag.
+  const patternRefsMap = useRef(new Map<string, SVGPatternElement | null>());
 
   // Always-fresh data for the imperative handle (no closure staleness)
   const latestRef = useRef({ attachments, elementMap });
@@ -71,6 +73,20 @@ export function AttachmentLayer({
               pathEl?.setAttribute("d", pathD);
             }
           }
+
+          // Keep the rope texture strands at the same angle relative to the rope.
+          const newRopeAngle =
+            Math.atan2(toCenter.y - fromCenter.y, toCenter.x - fromCenter.x) *
+            (180 / Math.PI);
+          const patternEl = patternRefsMap.current.get(attachment.id);
+          if (patternEl) {
+            patternEl.setAttribute(
+              "patternTransform",
+              `rotate(${newRopeAngle + 45}, ${fromCenter.x}, ${fromCenter.y})`,
+            );
+            patternEl.setAttribute("x", String(fromCenter.x));
+            patternEl.setAttribute("y", String(fromCenter.y));
+          }
         }
       },
     };
@@ -95,6 +111,7 @@ export function AttachmentLayer({
     return (
       <pattern
         key={patternId}
+        ref={(el) => { patternRefsMap.current.set(attachment.id, el); }}
         id={patternId}
         x={fromWorld.x}
         y={fromWorld.y}

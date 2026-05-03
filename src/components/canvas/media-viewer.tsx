@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { getElementDescription } from "@/hooks/use-description";
-import type { CanvasElementRecord, MediaViewerState } from "@/types/canvas";
+import type { MediaViewerState } from "@/types/canvas";
 
 type MediaViewerProps = {
   viewer: MediaViewerState | null;
   onClose: () => void;
-  elements: CanvasElementRecord[];
+  descriptionDraft: string;
+  setDescriptionDraft: (value: string) => void;
+  isSavingDescription: boolean;
+  onSaveDescription: () => Promise<void>;
 };
 
-export function MediaViewer({ viewer, onClose, elements }: MediaViewerProps) {
+export function MediaViewer({ viewer, onClose, descriptionDraft, setDescriptionDraft, isSavingDescription, onSaveDescription }: MediaViewerProps) {
   const [alive, setAlive] = useState(false);
   const [visible, setVisible] = useState(false);
 
@@ -27,9 +29,6 @@ export function MediaViewer({ viewer, onClose, elements }: MediaViewerProps) {
   }, [viewer]);
 
   if (!alive || !viewer) return null;
-
-  const viewerElement = elements.find((el) => el.id === viewer.elementId);
-  const viewerDescription = viewerElement ? getElementDescription(viewerElement) : "";
 
   return (
     <div
@@ -98,23 +97,31 @@ export function MediaViewer({ viewer, onClose, elements }: MediaViewerProps) {
             </div>
           )}
 
-          {viewerDescription ? (
-            <div
-              className="w-full text-center text-sm leading-relaxed text-white/92"
-              style={{
-                backdropFilter: "blur(24px) saturate(180%)",
-                WebkitBackdropFilter: "blur(24px) saturate(180%)",
-                background: "rgba(255,255,255,0.12)",
-                border: "0.5px solid rgba(255,255,255,0.26)",
-                borderRadius: "14px",
-                padding: "11px 16px",
-                boxShadow:
-                  "0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.18)",
-              }}
-            >
-              {viewerDescription}
-            </div>
-          ) : null}
+          <textarea
+            className="w-full resize-none text-center text-sm leading-relaxed text-white/90 placeholder:text-white/40 focus:outline-none"
+            value={descriptionDraft}
+            onChange={(e) => setDescriptionDraft(e.target.value)}
+            onBlur={() => void onSaveDescription()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void onSaveDescription();
+              }
+            }}
+            placeholder="Add a description..."
+            disabled={isSavingDescription}
+            rows={2}
+            style={{
+              backdropFilter: "blur(24px) saturate(180%)",
+              WebkitBackdropFilter: "blur(24px) saturate(180%)",
+              background: "rgba(255,255,255,0.12)",
+              border: "0.5px solid rgba(255,255,255,0.26)",
+              borderRadius: "14px",
+              padding: "11px 16px",
+              boxShadow:
+                "0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.18)",
+            }}
+          />
         </div>
       </div>
     </div>
