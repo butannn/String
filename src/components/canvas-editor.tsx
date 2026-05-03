@@ -2184,26 +2184,6 @@ export function CanvasEditor({
                     floodOpacity="0.7"
                   />
                 </filter>
-                <pattern
-                  id="ropeTexture"
-                  x="0"
-                  y="0"
-                  width="14"
-                  height="14"
-                  patternUnits="userSpaceOnUse"
-                  patternTransform="rotate(50)"
-                >
-                  {/* groove */}
-                  <rect width="14" height="14" fill="#000000" />
-                  {/* strand A */}
-                  <rect x="1" y="0" width="5" height="14" fill="#2a2a2a" />
-                  {/* strand A inner highlight */}
-                  <rect x="1.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
-                  {/* strand B */}
-                  <rect x="8" y="0" width="5" height="14" fill="#2a2a2a" />
-                  {/* strand B inner highlight */}
-                  <rect x="8.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
-                </pattern>
               </defs>
               {attachments.map((attachment) => {
                 const from = elementMap.get(attachment.from_element_id);
@@ -2223,8 +2203,38 @@ export function CanvasEditor({
                 const isAttachmentSelected =
                   selectedAttachmentId === attachment.id;
 
+                const ropeAngle =
+                  Math.atan2(
+                    toPoint.y - fromPoint.y,
+                    toPoint.x - fromPoint.x,
+                  ) *
+                  (180 / Math.PI);
+                const patternId = `ropeTexture-${attachment.id}`;
+
                 return (
                   <g key={attachment.id}>
+                    <defs>
+                      <pattern
+                        id={patternId}
+                        x="0"
+                        y="0"
+                        width="14"
+                        height="14"
+                        patternUnits="userSpaceOnUse"
+                        patternTransform={`rotate(${ropeAngle + 45})`}
+                      >
+                        {/* groove */}
+                        <rect width="14" height="14" fill="#000000" />
+                        {/* strand A */}
+                        <rect x="1" y="0" width="5" height="14" fill="#2a2a2a" />
+                        {/* strand A inner highlight */}
+                        <rect x="1.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                        {/* strand B */}
+                        <rect x="8" y="0" width="5" height="14" fill="#2a2a2a" />
+                        {/* strand B inner highlight */}
+                        <rect x="8.8" y="0" width="1.5" height="14" fill="rgba(255,255,255,0.12)" />
+                      </pattern>
+                    </defs>
                     {/* Drop shadow */}
                     <path
                       d={path}
@@ -2269,7 +2279,7 @@ export function CanvasEditor({
                     <path
                       d={path}
                       fill="none"
-                      stroke="url(#ropeTexture)"
+                      stroke={`url(#${patternId})`}
                       strokeWidth={16}
                       strokeLinecap="round"
                       strokeLinejoin="round"
