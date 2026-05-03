@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { deleteRows } from "@/lib/data-api";
 import { useZoomPan } from "@/hooks/use-zoom-pan";
 import { useCanvasData } from "@/hooks/use-canvas-data";
@@ -6,14 +6,11 @@ import { useElementDrag } from "@/hooks/use-element-drag";
 import { useAttachmentActions } from "@/hooks/use-attachment-actions";
 import { useMediaActions } from "@/hooks/use-media-actions";
 import { useDescription } from "@/hooks/use-description";
-import {
-  getElementDescription,
-  getElementDescriptionStyle,
-} from "@/hooks/use-description";
 import { CanvasHeader } from "@/components/canvas/canvas-header";
 import { CanvasViewport } from "@/components/canvas/canvas-viewport";
 import { CanvasWorld } from "@/components/canvas/canvas-world";
 import { AttachmentLayer } from "@/components/canvas/attachment-layer";
+import type { AttachmentLayerHandle } from "@/components/canvas/attachment-layer";
 import { CanvasElement } from "@/components/canvas/canvas-element";
 import { MediaViewer } from "@/components/canvas/media-viewer";
 import { ElementPanel } from "@/components/canvas/element-panel";
@@ -25,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useDarkMode } from "@/hooks/use-dark-mode";
 import { Moon, Sun, X } from "lucide-react";
 import type { CanvasRecord, ElementType, Mode, OpenableCanvasElementRecord, PanState } from "@/types/canvas";
+import { isOpenableMediaType } from "@/types/canvas";
 
 type CanvasEditorProps = {
   userId: string;
@@ -48,9 +46,14 @@ export function CanvasEditor({
   const { isDark, toggleDark } = useDarkMode();
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const worldRef = useRef<HTMLDivElement | null>(null);
+  const attachmentSvgRef = useRef<SVGSVGElement | null>(null);
+  const attachmentHandleRef = useRef<AttachmentLayerHandle | null>(null);
+  const elementNodeMapRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const panMovedRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
+  const elementDraggedRef = useRef(false);
   const pendingElementDragRef = useRef<{
     id: string;
     startX: number;
@@ -59,7 +62,6 @@ export function CanvasEditor({
     originY: number;
   } | null>(null);
 
-  const [worldSize, setWorldSize] = useState(6000);
   const [mode, setMode] = useState<Mode>("move");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -104,7 +106,9 @@ export function CanvasEditor({
     setZoomFromAnchorImmediate,
     focusRows,
     applyPan,
-  } = useZoomPan(viewportRef, worldSize);
+    panActiveRef,
+    commitPanState,
+  } = useZoomPan(viewportRef, worldRef, attachmentSvgRef);
 
   const {
     elements,
@@ -127,6 +131,19 @@ export function CanvasEditor({
     zoomRef,
     gestureActiveRef,
     pointerPinchActiveRef,
+    elementNodeMapRef,
+    attachmentHandleRef,
+  );
+
+  const handleElementMount = useCallback(
+    (id: string, node: HTMLDivElement | null) => {
+      if (node) {
+        elementNodeMapRef.current.set(id, node);
+      } else {
+        elementNodeMapRef.current.delete(id);
+      }
+    },
+    [],
   );
 
   const {
@@ -153,8 +170,8 @@ export function CanvasEditor({
     setMediaViewer,
     createElement,
     handleMediaFile,
-    openSelectedMedia,
     openElementMedia,
+    openSelectedMedia,
   } = useMediaActions({
     activeCanvasId,
     userId,
@@ -165,7 +182,6 @@ export function CanvasEditor({
     panYRef,
     setElements,
     setSelectedId,
-    setWorldSize,
     flushPendingAttachments,
     setAttachments,
     setError,
@@ -194,11 +210,16 @@ export function CanvasEditor({
         panMovedRef.current = true;
       }
 
+      panActiveRef.current = true;
       applyPan(panState.startPanX + deltaX, panState.startPanY + deltaY);
     }
 
     function handleViewportPanEnd() {
       if (!panState) return;
+      if (panActiveRef.current) {
+        panActiveRef.current = false;
+        commitPanState();
+      }
       setPanState(null);
       requestAnimationFrame(() => {
         panMovedRef.current = false;
@@ -213,7 +234,7 @@ export function CanvasEditor({
       window.removeEventListener("pointerup", handleViewportPanEnd);
       window.removeEventListener("pointercancel", handleViewportPanEnd);
     };
-  }, [panState, gestureActiveRef, pointerPinchActiveRef, applyPan, setPanState]);
+  }, [panState, gestureActiveRef, pointerPinchActiveRef, applyPan, setPanState, panActiveRef, commitPanState]);
 
   // Pending element drag — activate once pointer moves beyond threshold
   useEffect(() => {
@@ -227,6 +248,7 @@ export function CanvasEditor({
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
         }
+        elementDraggedRef.current = true;
         pendingElementDragRef.current = null;
         setDragState({
           id: pending.id,
@@ -289,27 +311,68 @@ export function CanvasEditor({
     focusRows(elements);
   }
 
-  function cancelLongPressTimer() {
+  function handleAddMedia(type: Extract<ElementType, "image" | "audio" | "video">) {
+    setMobileSheetOpen(false);
+    void createElement(type);
+  }
+
+  // Always-fresh ref so stable callbacks below always read the latest mutable values.
+  const latestRef = useRef({ mode, selectedId, isMobileViewport, elementMap, createAttachment, openElementMedia });
+  latestRef.current = { mode, selectedId, isMobileViewport, elementMap, createAttachment, openElementMedia };
+
+  const cancelLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  }
+  }, []);
 
-  function startElementLongPress(elementId: string) {
+  const startElementLongPress = useCallback((elementId: string) => {
     longPressTriggeredRef.current = false;
-    cancelLongPressTimer();
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
     longPressTimerRef.current = window.setTimeout(() => {
       longPressTriggeredRef.current = true;
       pendingElementDragRef.current = null;
       setSelectedId(elementId);
     }, 600);
-  }
+  }, [setSelectedId]);
 
-  function handleAddMedia(type: Extract<ElementType, "image" | "audio" | "video">) {
-    setMobileSheetOpen(false);
-    void createElement(type);
-  }
+  const handleElementSelect = useCallback((id: string, event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    if (longPressTriggeredRef.current) { longPressTriggeredRef.current = false; return; }
+    if (elementDraggedRef.current) { elementDraggedRef.current = false; return; }
+
+    const { mode, selectedId, isMobileViewport, elementMap, createAttachment, openElementMedia } = latestRef.current;
+
+    if (mode === "attach" && selectedId) {
+      void createAttachment(id);
+      return;
+    }
+    if (isMobileViewport) {
+      const el = elementMap.get(id);
+      if (el && isOpenableMediaType(el.element_type)) {
+        void openElementMedia(el as OpenableCanvasElementRecord);
+      }
+      return;
+    }
+    setSelectedAttachmentId(null);
+    setSelectedId(id);
+    const el = elementMap.get(id);
+    if (el && isOpenableMediaType(el.element_type)) {
+      void openElementMedia(el as OpenableCanvasElementRecord);
+    }
+  }, [setSelectedAttachmentId, setSelectedId]);
+
+  const handleElementPointerDown = useCallback((id: string, originX: number, originY: number, event: React.PointerEvent<HTMLElement>) => {
+    if (latestRef.current.mode !== "move") return;
+    event.preventDefault();
+    event.stopPropagation();
+    pendingElementDragRef.current = { id, startX: event.clientX, startY: event.clientY, originX, originY };
+    startElementLongPress(id);
+  }, [startElementLongPress]);
 
   return (
     <main className="flex h-screen flex-col bg-zinc-100 dark:bg-zinc-950">
@@ -342,17 +405,23 @@ export function CanvasEditor({
           isMobileViewport={isMobileViewport}
           panMovedRef={panMovedRef}
         >
-          <CanvasWorld worldSize={worldSize} panX={panX} panY={panY} zoom={zoom}>
-            <AttachmentLayer
-              attachments={attachments}
-              elementMap={elementMap}
-              selectedAttachmentId={selectedAttachmentId}
-              onSelectAttachment={(id) => {
-                setSelectedId(null);
-                setSelectedAttachmentId(id);
-              }}
-            />
+          {/* Rope/string layer rendered BEFORE elements so it sits behind them */}
+          <AttachmentLayer
+            attachments={attachments}
+            elementMap={elementMap}
+            selectedAttachmentId={selectedAttachmentId}
+            onSelectAttachment={(id) => {
+              setSelectedId(null);
+              setSelectedAttachmentId(id);
+            }}
+            panX={panX}
+            panY={panY}
+            zoom={zoom}
+            svgRef={attachmentSvgRef}
+            imperativeRef={attachmentHandleRef}
+          />
 
+          <CanvasWorld panX={panX} panY={panY} zoom={zoom} worldRef={worldRef}>
             {elements.map((element) => {
               const isSelected = selectedId === element.id;
               const isAttachTarget =
@@ -365,51 +434,9 @@ export function CanvasEditor({
                   isSelected={isSelected}
                   isAttachTarget={isAttachTarget}
                   isDark={isDark}
-                  description={getElementDescription(element)}
-                  descriptionStyle={getElementDescriptionStyle(element)}
-                  onSelect={(event) => {
-                    event.stopPropagation();
-                    if (longPressTriggeredRef.current) {
-                      longPressTriggeredRef.current = false;
-                      return;
-                    }
-
-                    if (mode === "attach" && selectedId) {
-                      void createAttachment(element.id);
-                      return;
-                    }
-
-                    setSelectedAttachmentId(null);
-
-                    // Single tap on image/video → open lightbox viewer
-                    if (
-                      element.element_type === "image" ||
-                      element.element_type === "video"
-                    ) {
-                      void openElementMedia(
-                        element as OpenableCanvasElementRecord,
-                      );
-                      return;
-                    }
-
-                    setSelectedId(element.id);
-                  }}
-                  onPointerDown={(event) => {
-                    if (mode !== "move") return;
-
-                    event.preventDefault();
-                    event.stopPropagation();
-
-                    pendingElementDragRef.current = {
-                      id: element.id,
-                      startX: event.clientX,
-                      startY: event.clientY,
-                      originX: element.x,
-                      originY: element.y,
-                    };
-
-                    startElementLongPress(element.id);
-                  }}
+                  onMount={handleElementMount}
+                  onSelect={handleElementSelect}
+                  onPointerDown={handleElementPointerDown}
                   onPointerUp={cancelLongPressTimer}
                   onPointerCancel={cancelLongPressTimer}
                   onPointerLeave={cancelLongPressTimer}
@@ -417,6 +444,7 @@ export function CanvasEditor({
               );
             })}
           </CanvasWorld>
+
         </CanvasViewport>
 
         {!isMobileViewport && (

@@ -53,6 +53,7 @@ export function getAttachmentPath(
   seed: string,
   intensity = 1,
   phaseShift = 0,
+  zoom = 1,
 ) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -67,15 +68,19 @@ export function getAttachmentPath(
   const random = createSeededRandom(
     hashSeed(`${seed}:${intensity}:${phaseShift}`),
   );
-  const segmentCount = Math.max(4, Math.min(8, Math.round(distance / 100)));
+  // Use world-space distance so segment count and displacement are
+  // consistent regardless of zoom level.
+  const worldDistance = distance / Math.max(0.01, zoom);
+  const segmentCount = Math.max(4, Math.min(8, Math.round(worldDistance / 100)));
+  // Compute amplitude/sag in world units, then convert to viewport pixels.
   const baseAmplitude =
-    Math.max(6, Math.min(25, distance * 0.04)) * intensity;
+    Math.max(6, Math.min(25, worldDistance * 0.04)) * intensity * zoom;
 
   // Catenary sag — rope droops downward under its own weight.
   // Scale with horizontal span so nearly-vertical ropes sag less.
   const horizontalWeight = Math.abs(dx) / Math.max(1, distance);
   const catSag =
-    Math.min(130, distance * 0.16 + 28) * horizontalWeight * intensity;
+    Math.min(130, worldDistance * 0.16 + 28) * horizontalWeight * intensity * zoom;
 
   const points: Array<{ x: number; y: number }> = [];
   for (let i = 0; i <= segmentCount; i += 1) {

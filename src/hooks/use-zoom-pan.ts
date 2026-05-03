@@ -14,7 +14,8 @@ type GestureLikeEvent = Event & {
 
 export function useZoomPan(
   viewportRef: RefObject<HTMLDivElement | null>,
-  worldSize: number,
+  worldRef: RefObject<HTMLDivElement | null>,
+  attachmentSvgRef: RefObject<SVGSVGElement | null>,
 ) {
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
@@ -32,25 +33,11 @@ export function useZoomPan(
   const gestureActiveRef = useRef(false);
   const suppressWheelUntilRef = useRef(0);
   const pointerPinchActiveRef = useRef(false);
+  const panActiveRef = useRef(false);
 
   useEffect(() => {
     zoomRef.current = zoom;
   }, [zoom]);
-
-  // Initialize pan to center the world
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-
-    const initialPanX = viewport.clientWidth / 2 - worldSize / 2;
-    const initialPanY = viewport.clientHeight / 2 - worldSize / 2;
-    panXRef.current = initialPanX;
-    panYRef.current = initialPanY;
-    setPanX(initialPanX);
-    setPanY(initialPanY);
-    // Intentionally run once on mount only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Spacebar pan mode
   useEffect(() => {
@@ -141,6 +128,10 @@ export function useZoomPan(
       gestureActiveRef.current = false;
       suppressWheelUntilRef.current = performance.now() + 120;
       gestureState = null;
+      // Sync React state once after gesture ends
+      setZoom(zoomRef.current);
+      setPanX(panXRef.current);
+      setPanY(panYRef.current);
     };
 
     viewport.addEventListener("gesturestart", onGestureStart, { passive: false });
@@ -183,7 +174,13 @@ export function useZoomPan(
       pointers.delete(event.pointerId);
       if (pointers.size < 2) {
         previousDistance = null;
-        pointerPinchActiveRef.current = false;
+        if (pointerPinchActiveRef.current) {
+          pointerPinchActiveRef.current = false;
+          // Sync React state once after pinch ends
+          setZoom(zoomRef.current);
+          setPanX(panXRef.current);
+          setPanY(panYRef.current);
+        }
       }
     };
 
@@ -275,6 +272,20 @@ export function useZoomPan(
     panXRef.current = nextPanX;
     panYRef.current = nextPanY;
 
+    // During an active pinch/gesture, apply the transform directly to the
+    // DOM elements to avoid re-rendering every canvas element on each frame.
+    if (
+      (pointerPinchActiveRef.current || gestureActiveRef.current) &&
+      worldRef.current
+    ) {
+      const transformValue = `translate(${nextPanX}px, ${nextPanY}px) scale(${nextZoom})`;
+      worldRef.current.style.transform = transformValue;
+      if (attachmentSvgRef.current) {
+        attachmentSvgRef.current.style.transform = transformValue;
+      }
+      return;
+    }
+
     setZoom(nextZoom);
     setPanX(nextPanX);
     setPanY(nextPanY);
@@ -310,36 +321,71 @@ export function useZoomPan(
       panXRef.current = nextPanX;
       panYRef.current = nextPanY;
 
-      setZoom(nextZoom);
-      setPanX(nextPanX);
-      setPanY(nextPanY);
+      // Bypass React state — write directly to DOM every frame.
+      if (worldRef.current) {
+        const t = `translate(${nextPanX}px, ${nextPanY}px) scale(${nextZoom})`;
+        worldRef.current.style.transform = t;
+        if (attachmentSvgRef.current) {
+          attachmentSvgRef.current.style.transform = t;
+        }
+      }
 
       if (!done) {
+        // Stop if user takes control via pan or pinch.
+        if (panActiveRef.current || pointerPinchActiveRef.current || gestureActiveRef.current) {
+          zoomRafRef.current = null;
+          setZoom(nextZoom);
+          setPanX(nextPanX);
+          setPanY(nextPanY);
+          return;
+        }
         zoomRafRef.current = requestAnimationFrame(step);
       } else {
         zoomRafRef.current = null;
+        // Commit React state once at the end of animation.
+        setZoom(nextZoom);
+        setPanX(nextPanX);
+        setPanY(nextPanY);
       }
     };
 
     zoomRafRef.current = requestAnimationFrame(step);
   }
 
-  function focusRows(rows: CanvasElementRecord[]) {
+  function focusRows(rows: CanvasElementRecord[], immediate = false) {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
 
+    // Guard: if the viewport hasn't been laid out yet, retry on the next frame.
+    if (vw === 0 || vh === 0) {
+      requestAnimationFrame(() => focusRows(rows, immediate));
+      return;
+    }
+
+    const applyView = (targetZoom: number, targetPanX: number, targetPanY: number) => {
+      if (immediate) {
+        // Snap directly — no animation. Used on initial canvas load so the
+        // user never sees the top-left corner flash before the view animates.
+        if (zoomRafRef.current !== null) {
+          cancelAnimationFrame(zoomRafRef.current);
+          zoomRafRef.current = null;
+        }
+        zoomRef.current = targetZoom;
+        panXRef.current = targetPanX;
+        panYRef.current = targetPanY;
+        setZoom(targetZoom);
+        setPanX(targetPanX);
+        setPanY(targetPanY);
+      } else {
+        animateZoomAndPanTo(targetZoom, targetPanX, targetPanY);
+      }
+    };
+
     if (rows.length === 0) {
-      const targetZoom = 1;
-      const worldCenterX = worldSize / 2;
-      const worldCenterY = worldSize / 2;
-      animateZoomAndPanTo(
-        targetZoom,
-        vw / 2 - worldCenterX * targetZoom,
-        vh / 2 - worldCenterY * targetZoom,
-      );
+      applyView(1, vw / 2, vh / 2);
       return;
     }
 
@@ -366,7 +412,7 @@ export function useZoomPan(
     const worldCenterX = (minX + maxX) / 2;
     const worldCenterY = (minY + maxY) / 2;
 
-    animateZoomAndPanTo(
+    applyView(
       targetZoom,
       vw / 2 - worldCenterX * targetZoom,
       vh / 2 - worldCenterY * targetZoom,
@@ -376,8 +422,25 @@ export function useZoomPan(
   function applyPan(nextPanX: number, nextPanY: number) {
     panXRef.current = nextPanX;
     panYRef.current = nextPanY;
+
+    // During an active pan, apply the transform directly to the DOM elements
+    // to avoid re-rendering every canvas element on each pointermove frame.
+    if (panActiveRef.current && worldRef.current) {
+      const transformValue = `translate(${nextPanX}px, ${nextPanY}px) scale(${zoomRef.current})`;
+      worldRef.current.style.transform = transformValue;
+      if (attachmentSvgRef.current) {
+        attachmentSvgRef.current.style.transform = transformValue;
+      }
+      return;
+    }
+
     setPanX(nextPanX);
     setPanY(nextPanY);
+  }
+
+  function commitPanState() {
+    setPanX(panXRef.current);
+    setPanY(panYRef.current);
   }
 
   // Cleanup RAF on unmount
@@ -407,5 +470,7 @@ export function useZoomPan(
     animateZoomAndPanTo,
     focusRows,
     applyPan,
+    panActiveRef,
+    commitPanState,
   };
 }

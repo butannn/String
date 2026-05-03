@@ -1,41 +1,49 @@
+import { memo, useCallback } from "react";
 import { hexToRgba } from "@/lib/media-utils";
-import type { CanvasElementRecord, DescriptionStyle } from "@/types/canvas";
+import { getElementDescription, getElementDescriptionStyle } from "@/hooks/use-description";
+import type { CanvasElementRecord } from "@/types/canvas";
 
 type CanvasElementProps = {
   element: CanvasElementRecord;
   isSelected: boolean;
   isAttachTarget: boolean;
   isDark: boolean;
-  description: string;
-  descriptionStyle: DescriptionStyle;
-  onSelect: (event: React.MouseEvent<HTMLElement>) => void;
-  onPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
+  onMount: (id: string, node: HTMLDivElement | null) => void;
+  onSelect: (id: string, event: React.MouseEvent<HTMLElement>) => void;
+  onPointerDown: (id: string, originX: number, originY: number, event: React.PointerEvent<HTMLElement>) => void;
   onPointerUp: () => void;
   onPointerCancel: () => void;
   onPointerLeave: () => void;
 };
 
-export function CanvasElement({
+export const CanvasElement = memo(function CanvasElement({
   element,
   isSelected,
   isAttachTarget,
   isDark,
-  description,
-  descriptionStyle,
+  onMount,
   onSelect,
   onPointerDown,
   onPointerUp,
   onPointerCancel,
   onPointerLeave,
 }: CanvasElementProps) {
+  const description = getElementDescription(element);
+  const descriptionStyle = getElementDescriptionStyle(element);
   const data = element.data ?? {};
   const fileName = String(data.fileName ?? element.element_type);
   const mediaSrc = typeof data.src === "string" ? data.src : "";
   const previewSrc = typeof data.previewSrc === "string" ? data.previewSrc : "";
   const fullSrc = typeof data.fullSrc === "string" ? data.fullSrc : "";
 
+  const nodeRef = useCallback(
+    (node: HTMLDivElement | null) => { onMount(element.id, node); },
+    [element.id, onMount],
+  );
+
   return (
     <div
+      ref={nodeRef}
       className="absolute"
       data-canvas-element="true"
       style={{
@@ -50,16 +58,17 @@ export function CanvasElement({
         }`}
         style={{
           height: `${element.height}px`,
+          transition: "box-shadow 0.15s ease",
           boxShadow: isSelected
             ? isDark
-              ? "0 0 0 2px rgba(255,235,185,0.18), 0 20px 48px rgba(255,220,140,0.22), 0 6px 16px rgba(255,200,100,0.18)"
-              : "0 0 0 2px rgba(80,35,0,0.12), 0 20px 48px rgba(60,25,0,0.55), 0 6px 16px rgba(60,25,0,0.38)"
+              ? "0 0 0 2px rgba(255,235,185,0.25), 0 28px 64px rgba(255,220,140,0.45), 0 10px 28px rgba(255,200,100,0.35)"
+              : "0 0 0 2px rgba(80,35,0,0.18), 0 28px 64px rgba(30,10,0,0.75), 0 10px 28px rgba(30,10,0,0.55)"
             : isDark
-              ? "0 10px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.35)"
-              : "0 10px 24px rgba(50,25,5,0.32), 0 2px 6px rgba(50,25,5,0.20)",
+              ? "0 14px 32px rgba(0,0,0,0.75), 0 4px 10px rgba(0,0,0,0.55)"
+              : "0 14px 32px rgba(30,10,0,0.52), 0 4px 10px rgba(30,10,0,0.34)",
         }}
-        onClick={onSelect}
-        onPointerDown={onPointerDown}
+        onClick={(e) => onSelect(element.id, e)}
+        onPointerDown={(e) => onPointerDown(element.id, element.x, element.y, e)}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
         onPointerLeave={onPointerLeave}
@@ -129,7 +138,7 @@ export function CanvasElement({
       element.element_type !== "image" &&
       element.element_type !== "video" ? (
         <div
-          className="mt-2 rounded-lg border px-3 py-2 text-xs leading-relaxed shadow-sm backdrop-blur-sm"
+          className="mt-2 rounded-lg border px-3 py-2 text-xs leading-relaxed shadow-sm"
           style={{
             color: descriptionStyle.textColor,
             fontWeight: descriptionStyle.fontWeight,
@@ -144,4 +153,4 @@ export function CanvasElement({
       ) : null}
     </div>
   );
-}
+});

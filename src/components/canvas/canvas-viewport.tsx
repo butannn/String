@@ -118,13 +118,13 @@ export function CanvasViewport({
       }}
     >
       {isMobileViewport ? (
-        <div className="pointer-events-none absolute left-3 top-3 z-[5] rounded-full border border-zinc-300 bg-white/90 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-700 backdrop-blur dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-zinc-300">
+        <div className="pointer-events-none absolute left-3 top-3 z-[5] rounded-full border border-zinc-300 bg-white/95 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800/95 dark:text-zinc-300">
           {mode === "move" ? "Move" : "Attach"}
         </div>
       ) : null}
 
       {mode === "attach" ? (
-        <div className="pointer-events-none absolute right-3 top-3 z-[5] rounded-md border border-zinc-300 bg-white/90 px-3 py-1 text-[11px] font-medium text-zinc-700 backdrop-blur dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-zinc-300">
+        <div className="pointer-events-none absolute right-3 top-3 z-[5] rounded-md border border-zinc-300 bg-white/95 px-3 py-1 text-[11px] font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800/95 dark:text-zinc-300">
           Tap a string to delete it
         </div>
       ) : null}

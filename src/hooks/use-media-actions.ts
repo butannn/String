@@ -30,7 +30,6 @@ type UseMediaActionsOptions = {
   panYRef: RefObject<number>;
   setElements: React.Dispatch<React.SetStateAction<CanvasElementRecord[]>>;
   setSelectedId: React.Dispatch<React.SetStateAction<string | null>>;
-  setWorldSize: React.Dispatch<React.SetStateAction<number>>;
   flushPendingAttachments: (
     tempId: string,
     realId: string,
@@ -51,7 +50,6 @@ export function useMediaActions({
   panYRef,
   setElements,
   setSelectedId,
-  setWorldSize,
   flushPendingAttachments,
   setError,
   setIsCreateDialogOpen,
@@ -155,20 +153,12 @@ export function useMediaActions({
     const width = mediaWidth;
     const height = mediaHeight;
     const viewport = viewportRef.current;
-    const x = Math.max(
-      0,
+    const x =
       preferredPosition?.x ??
-        (viewport ? viewport.clientWidth / 2 - panXRef.current : 0) /
-          zoomRef.current -
-          width / 2,
-    );
-    const y = Math.max(
-      0,
+      (viewport ? (viewport.clientWidth / 2 - panXRef.current) / zoomRef.current - width / 2 : -width / 2);
+    const y =
       preferredPosition?.y ??
-        (viewport ? viewport.clientHeight / 2 - panYRef.current : 0) /
-          zoomRef.current -
-          height / 2,
-    );
+      (viewport ? (viewport.clientHeight / 2 - panYRef.current) / zoomRef.current - height / 2 : -height / 2);
 
     const tempId = `temp-${crypto.randomUUID()}`;
     const localPreviewSrc =
@@ -204,9 +194,6 @@ export function useMediaActions({
 
     setElements((previous) => [...previous, tempElement]);
     setSelectedId(tempId);
-    setWorldSize((prev) =>
-      Math.max(prev, Math.max(x + width, y + height) + 2000),
-    );
 
     try {
       const ext = file.name.split(".").pop() ?? "bin";

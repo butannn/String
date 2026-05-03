@@ -69,7 +69,7 @@ export function MobileToolbar({
       {/* Selected element action bar */}
       {(selectedId || selectedAttachmentId) && !mobileSheetOpen ? (
         <div
-          className="fixed inset-x-3 z-50 rounded-xl border border-zinc-200 bg-zinc-50/95 p-2 shadow-xl backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 md:hidden"
+          className="fixed inset-x-3 z-50 rounded-xl border border-zinc-200 bg-zinc-50/98 p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900/98 md:hidden"
           style={{ bottom: "calc(env(safe-area-inset-bottom) + 82px)" }}
         >
           <ElementPanel
@@ -132,7 +132,7 @@ export function MobileToolbar({
 
       {/* Fixed bottom bar */}
       {!mobileSheetOpen ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-zinc-50/95 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 md:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-zinc-50 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
           <div className="grid grid-cols-3 gap-2">
             <Button
               className="h-11"

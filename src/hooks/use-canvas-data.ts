@@ -78,7 +78,7 @@ async function hydrateElementRow(
 
 export function useCanvasData(
   activeCanvasId: string | null,
-  focusRows: (rows: CanvasElementRecord[]) => void,
+  focusRows: (rows: CanvasElementRecord[], immediate?: boolean) => void,
 ) {
   const [elements, setElements] = useState<CanvasElementRecord[]>([]);
   const [attachments, setAttachments] = useState<ElementAttachmentRecord[]>([]);
@@ -148,8 +148,10 @@ export function useCanvasData(
       setSelectedId(null);
       setSelectedAttachmentId(null);
 
+      // Pass immediate=true so the view snaps to elements without animating
+      // from the default pan (0,0) — which would flash the top-left corner.
       requestAnimationFrame(() => {
-        focusRowsRef.current(hydratedRows);
+        focusRowsRef.current(hydratedRows, true);
       });
 
       return hydratedRows;
