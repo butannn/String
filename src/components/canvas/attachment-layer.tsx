@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { ElementAttachmentRecord, CanvasElementRecord } from "@/types/canvas";
 import { getElementCenter, getAttachmentPath } from "@/lib/attachment-utils";
+
+type AnimatingPair = { fromId: string; toId: string };
 
 export type AttachmentLayerHandle = {
   updateElementPosition: (elementId: string, newX: number, newY: number) => void;
@@ -17,6 +19,8 @@ type AttachmentLayerProps = {
   zoom: number;
   svgRef: RefObject<SVGSVGElement | null>;
   imperativeRef: RefObject<AttachmentLayerHandle | null>;
+  animatingPair?: AnimatingPair | null;
+  onAnimationComplete?: () => void;
 };
 
 export function AttachmentLayer({
@@ -29,6 +33,8 @@ export function AttachmentLayer({
   zoom,
   svgRef,
   imperativeRef,
+  animatingPair,
+  onAnimationComplete,
 }: AttachmentLayerProps) {
   // All coordinates are in world space — the CSS transform on the SVG
   // element handles pan/zoom, so we never need to convert to viewport here.
@@ -42,6 +48,31 @@ export function AttachmentLayer({
   // Always-fresh data for the imperative handle (no closure staleness)
   const latestRef = useRef({ attachments, elementMap });
   useEffect(() => { latestRef.current = { attachments, elementMap }; });
+
+  // --- Rope connection animation state ---
+  const [animPhase, setAnimPhase] = useState<'idle' | 'drawing' | 'bursting'>('idle');
+  const onAnimationCompleteRef = useRef(onAnimationComplete);
+  useEffect(() => { onAnimationCompleteRef.current = onAnimationComplete; });
+
+  useEffect(() => {
+    setAnimPhase('idle');
+    if (!animatingPair) return;
+
+    setAnimPhase('drawing');
+
+    const t1 = window.setTimeout(() => setAnimPhase('bursting'), 680);
+    const t2 = window.setTimeout(() => {
+      setAnimPhase('idle');
+      onAnimationCompleteRef.current?.();
+    }, 1280);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animatingPair]);
+  // --- end animation state ---
 
   // Expose imperative handle — re-assigned once (reads fresh data via latestRef)
   useEffect(() => {
@@ -160,6 +191,16 @@ export function AttachmentLayer({
         const to = elementMap.get(attachment.to_element_id);
         if (!from || !to) return null;
 
+        // Hide the static rope while its connection animation is playing
+        const isAnimating =
+          animPhase !== 'idle' &&
+          animatingPair &&
+          ((attachment.from_element_id === animatingPair.fromId &&
+            attachment.to_element_id === animatingPair.toId) ||
+            (attachment.from_element_id === animatingPair.toId &&
+              attachment.to_element_id === animatingPair.fromId));
+        if (isAnimating) return null;
+
         const fromWorld = getElementCenter(from);
         const toWorld = getElementCenter(to);
 
@@ -239,6 +280,156 @@ export function AttachmentLayer({
           </g>
         );
       })}
+
+      {/* ── Rope connection animation ── */}
+      {animPhase !== 'idle' && animatingPair && (() => {
+        const fromEl = elementMap.get(animatingPair.fromId);
+        const toEl = elementMap.get(animatingPair.toId);
+        if (!fromEl || !toEl) return null;
+
+        const fromWorld = getElementCenter(fromEl);
+        const toWorld = getElementCenter(toEl);
+        const animPath = getAttachmentPath(
+          fromWorld,
+          toWorld,
+          `anim-${animatingPair.fromId}-${animatingPair.toId}`,
+          1,
+          0,
+          1,
+        );
+        const animKey = `${animatingPair.fromId}-${animatingPair.toId}`;
+
+        return (
+          <g key={animKey}>
+            {animPhase === 'drawing' && (
+              <>
+                {/* Rope outline growing from source → destination */}
+                <path
+                  pathLength="1"
+                  d={animPath}
+                  fill="none"
+                  stroke="#6b4423"
+                  strokeWidth={12}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="1"
+                  style={{
+                    animation: 'rope-draw 0.65s ease-out both',
+                    pointerEvents: 'none',
+                  }}
+                />
+                {/* Wide golden glow overlay — same draw timing, fades at destination */}
+                <path
+                  pathLength="1"
+                  d={animPath}
+                  fill="none"
+                  stroke="#ffc040"
+                  strokeWidth={22}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="1"
+                  style={{
+                    animation: 'rope-draw 0.65s ease-out both',
+                    pointerEvents: 'none',
+                    filter: 'blur(6px)',
+                    opacity: 0.7,
+                  }}
+                />
+                {/* Traveling spark at the leading edge */}
+                <path
+                  pathLength="1"
+                  d={animPath}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={11}
+                  strokeLinecap="round"
+                  strokeDasharray="0.08 10"
+                  style={{
+                    animation: 'rope-spark-travel 0.65s ease-out both',
+                    pointerEvents: 'none',
+                    opacity: 0.95,
+                    filter: 'blur(1px)',
+                  }}
+                />
+              </>
+            )}
+
+            {animPhase === 'bursting' && (
+              <>
+                {/* Fully drawn rope outline stays visible */}
+                <path
+                  d={animPath}
+                  fill="none"
+                  stroke="#6b4423"
+                  strokeWidth={12}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ pointerEvents: 'none' }}
+                />
+                {/* Glow overlay fades out */}
+                <path
+                  d={animPath}
+                  fill="none"
+                  stroke="#ffc040"
+                  strokeWidth={22}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    animation: 'rope-glow-fade 0.55s ease-out both',
+                    pointerEvents: 'none',
+                    filter: 'blur(6px)',
+                  }}
+                />
+                {/* Expanding burst rings at destination */}
+                {([0, 140, 280] as const).map((delay) => (
+                  <circle
+                    key={delay}
+                    cx={toWorld.x}
+                    cy={toWorld.y}
+                    r={14}
+                    fill="none"
+                    stroke="#ffc040"
+                    strokeWidth={3}
+                    style={{
+                      transformBox: 'fill-box',
+                      transformOrigin: 'center',
+                      animation: `rope-burst-ring 0.52s ease-out ${delay}ms both`,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                ))}
+                {/* Centre flash dot at connection point */}
+                <circle
+                  cx={toWorld.x}
+                  cy={toWorld.y}
+                  r={14}
+                  fill="#fff8dc"
+                  style={{
+                    transformBox: 'fill-box',
+                    transformOrigin: 'center',
+                    animation: 'rope-burst-dot 0.48s ease-out both',
+                    pointerEvents: 'none',
+                  }}
+                />
+                {/* Small echo at source */}
+                <circle
+                  cx={fromWorld.x}
+                  cy={fromWorld.y}
+                  r={9}
+                  fill="#ffc040"
+                  style={{
+                    transformBox: 'fill-box',
+                    transformOrigin: 'center',
+                    animation: 'rope-burst-dot 0.38s ease-out both',
+                    opacity: 0.65,
+                    pointerEvents: 'none',
+                  }}
+                />
+              </>
+            )}
+          </g>
+        );
+      })()}
     </svg>
   );
 }

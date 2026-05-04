@@ -28,6 +28,12 @@
   box-sizing: border-box;
 }
 
+img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
 html,
 body,
 #root {
@@ -51,8 +57,41 @@ html.dark body {
   background: #1a1108;
 }
 
+/* --- Rope connection animation keyframes --- */
+
+@keyframes rope-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes rope-spark-travel {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -0.93; }
+}
+
+@keyframes rope-glow-fade {
+  0%   { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+
+@keyframes rope-burst-ring {
+  0%   { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(10); opacity: 0; }
+}
+
+@keyframes rope-burst-dot {
+  0%   { opacity: 1; transform: scale(1); }
+  40%  { opacity: 0.85; transform: scale(2.4); }
+  100% { opacity: 0; transform: scale(0.2); }
+}
+
+/* --- end rope animation --- */
+
 .canvas-viewport {
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   background-color: #f7ede0 !important;
 }
 

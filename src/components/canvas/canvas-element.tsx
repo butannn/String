@@ -80,6 +80,7 @@ export const CanvasElement = memo(function CanvasElement({
               alt={fileName}
               loading="lazy"
               decoding="async"
+              draggable={false}
               className="block h-full w-full bg-stone-200 object-contain"
             />
           ) : (

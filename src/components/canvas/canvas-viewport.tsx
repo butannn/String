@@ -69,6 +69,17 @@ export function CanvasViewport({
         const viewport = viewportRef.current;
         if (!viewport) return;
 
+        // Dismiss the virtual keyboard on mobile by blurring any focused
+        // input/textarea before preventDefault() suppresses the native blur.
+        if (
+          document.activeElement instanceof HTMLElement &&
+          (document.activeElement.tagName === "INPUT" ||
+            document.activeElement.tagName === "TEXTAREA" ||
+            document.activeElement.isContentEditable)
+        ) {
+          document.activeElement.blur();
+        }
+
         event.preventDefault();
         panMovedRef.current = false;
         setPanState({

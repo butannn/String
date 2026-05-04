@@ -63,6 +63,7 @@ export function CanvasEditor({
   } | null>(null);
 
   const [mode, setMode] = useState<Mode>("move");
+  const [animatingPair, setAnimatingPair] = useState<{ fromId: string; toId: string } | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -348,9 +349,23 @@ export function CanvasEditor({
     const { mode, selectedId, isMobileViewport, elementMap, createAttachment, openElementMedia } = latestRef.current;
 
     if (mode === "attach" && selectedId) {
+      setAnimatingPair({ fromId: selectedId, toId: id });
       void createAttachment(id);
       return;
     }
+
+    // When a picture is already selected, tapping another picture connects them
+    // with a rope instead of opening the media viewer.
+    if (selectedId && selectedId !== id) {
+      const selectedEl = elementMap.get(selectedId);
+      const clickedEl = elementMap.get(id);
+      if (selectedEl?.element_type === "image" && clickedEl?.element_type === "image") {
+        setAnimatingPair({ fromId: selectedId, toId: id });
+        void createAttachment(id);
+        return;
+      }
+    }
+
     if (isMobileViewport) {
       const el = elementMap.get(id);
       if (el && isOpenableMediaType(el.element_type)) {
@@ -368,14 +383,27 @@ export function CanvasEditor({
 
   const handleElementPointerDown = useCallback((id: string, originX: number, originY: number, event: React.PointerEvent<HTMLElement>) => {
     if (latestRef.current.mode !== "move") return;
-    event.preventDefault();
+
+    // Reset any stale drag flag at the start of every new gesture. Ghost pointer
+    // events fired by the OS when returning from the file picker can set
+    // elementDraggedRef=true (because the newly-added photo is selected and any
+    // movement >5 px triggers the drag path). Without this reset, the very next
+    // legitimate tap on another photo is swallowed by the elementDraggedRef
+    // guard in handleElementSelect, requiring a second tap to actually connect.
+    elementDraggedRef.current = false;
+
+    const isSelected = latestRef.current.selectedId === id;
+    if (isSelected) {
+      event.preventDefault();
+      pendingElementDragRef.current = { id, startX: event.clientX, startY: event.clientY, originX, originY };
+    }
+
     event.stopPropagation();
-    pendingElementDragRef.current = { id, startX: event.clientX, startY: event.clientY, originX, originY };
     startElementLongPress(id);
   }, [startElementLongPress]);
 
   return (
-    <main className="flex h-screen flex-col bg-zinc-100 dark:bg-zinc-950">
+    <main className="fixed inset-0 flex flex-col bg-zinc-100 dark:bg-zinc-950">
       <CanvasHeader
         canvases={canvases}
         activeCanvasId={activeCanvasId}
@@ -419,6 +447,8 @@ export function CanvasEditor({
             zoom={zoom}
             svgRef={attachmentSvgRef}
             imperativeRef={attachmentHandleRef}
+            animatingPair={animatingPair}
+            onAnimationComplete={() => setAnimatingPair(null)}
           />
 
           <CanvasWorld panX={panX} panY={panY} zoom={zoom} worldRef={worldRef}>
@@ -569,6 +599,11 @@ export function CanvasEditor({
         setDescriptionDraft={setDescriptionDraft}
         isSavingDescription={isSavingDescription}
         onSaveDescription={saveSelectedDescription}
+        getElementRect={() => {
+          if (!mediaViewer?.elementId) return null;
+          const node = elementNodeMapRef.current.get(mediaViewer.elementId);
+          return node ? node.getBoundingClientRect() : null;
+        }}
       />
 
       {/* Hidden file inputs */}
@@ -579,6 +614,10 @@ export function CanvasEditor({
         accept="image/*"
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
+          // Clear any stale drag state that may have been set by ghost pointer
+          // events while the file picker was open (common on mobile).
+          pendingElementDragRef.current = null;
+          elementDraggedRef.current = false;
           void handleMediaFile(file, "image");
           event.currentTarget.value = "";
         }}
@@ -590,6 +629,8 @@ export function CanvasEditor({
         accept="audio/*"
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
+          pendingElementDragRef.current = null;
+          elementDraggedRef.current = false;
           void handleMediaFile(file, "audio");
           event.currentTarget.value = "";
         }}
@@ -601,6 +642,8 @@ export function CanvasEditor({
         accept="video/*"
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
+          pendingElementDragRef.current = null;
+          elementDraggedRef.current = false;
           void handleMediaFile(file, "video");
           event.currentTarget.value = "";
         }}
