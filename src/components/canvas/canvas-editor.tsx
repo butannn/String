@@ -18,9 +18,12 @@ import { MobileToolbar } from "@/components/canvas/mobile-toolbar";
 import { DeleteElementDialog } from "@/components/canvas/dialogs/delete-element-dialog";
 import { LogoutDialog } from "@/components/canvas/dialogs/logout-dialog";
 import { CreateCanvasDialog } from "@/components/canvas/dialogs/create-canvas-dialog";
+import { ShareCanvasDialog } from "@/components/canvas/dialogs/share-canvas-dialog";
+import { CanvasTutorial } from "@/components/canvas/canvas-tutorial";
+import { GooglePhotosPickerDialog } from "@/components/canvas/dialogs/google-photos-picker-dialog";
 import { Button } from "@/components/ui/button";
 import { useDarkMode } from "@/hooks/use-dark-mode";
-import { Moon, Sun, X } from "lucide-react";
+import { Moon, Share2, Sun, X } from "lucide-react";
 import type { CanvasRecord, ElementType, Mode, OpenableCanvasElementRecord, PanState } from "@/types/canvas";
 import { isOpenableMediaType } from "@/types/canvas";
 
@@ -71,6 +74,8 @@ export function CanvasEditor({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
+  const [isGooglePhotosDialogOpen, setIsGooglePhotosDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Mobile viewport detection
@@ -317,6 +322,12 @@ export function CanvasEditor({
     void createElement(type);
   }
 
+  async function handleAddGooglePhotos(files: File[]) {
+    for (const file of files) {
+      await handleMediaFile(file, "image");
+    }
+  }
+
   // Always-fresh ref so stable callbacks below always read the latest mutable values.
   const latestRef = useRef({ mode, selectedId, isMobileViewport, elementMap, createAttachment, openElementMedia });
   latestRef.current = { mode, selectedId, isMobileViewport, elementMap, createAttachment, openElementMedia };
@@ -392,11 +403,12 @@ export function CanvasEditor({
     // guard in handleElementSelect, requiring a second tap to actually connect.
     elementDraggedRef.current = false;
 
-    const isSelected = latestRef.current.selectedId === id;
-    if (isSelected) {
-      event.preventDefault();
-      pendingElementDragRef.current = { id, startX: event.clientX, startY: event.clientY, originX, originY };
-    }
+    // Always set up a pending drag so the element can be moved on first touch
+    // without needing to select it first. If the pointer moves beyond the 5px
+    // threshold the drag activates and the click is suppressed; a simple tap
+    // still falls through to the select/open logic.
+    event.preventDefault();
+    pendingElementDragRef.current = { id, startX: event.clientX, startY: event.clientY, originX, originY };
 
     event.stopPropagation();
     startElementLongPress(id);
@@ -506,7 +518,7 @@ export function CanvasEditor({
               </button>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1" data-tutorial="add-desktop">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                 Add
               </p>
@@ -533,6 +545,13 @@ export function CanvasEditor({
                   Video
                 </Button>
               </div>
+              <Button
+                variant="outline"
+                className="mt-1 h-9 w-full text-xs"
+                onClick={() => setIsGooglePhotosDialogOpen(true)}
+              >
+                Google Photos
+              </Button>
             </div>
 
             <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
@@ -577,6 +596,15 @@ export function CanvasEditor({
               <Button
                 variant="outline"
                 className="h-9 w-full text-xs"
+                disabled={canvases.find((c) => c.id === activeCanvasId)?.user_id !== userId}
+                onClick={() => setIsShareDialogOpen(true)}
+              >
+                <Share2 size={13} className="mr-1" />
+                Share
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 w-full text-xs"
                 onClick={() => setIsLogoutDialogOpen(true)}
               >
                 Logout
@@ -591,6 +619,13 @@ export function CanvasEditor({
           {error}
         </div>
       ) : null}
+
+      {/* Onboarding tutorial — shows once per new account */}
+      <CanvasTutorial
+        userId={userId}
+        elementCount={elements.length}
+        isMobileViewport={isMobileViewport}
+      />
 
       <MediaViewer
         viewer={mediaViewer}
@@ -667,6 +702,20 @@ export function CanvasEditor({
         onCreateCanvas={onCreateCanvas}
       />
 
+      <ShareCanvasDialog
+        open={isShareDialogOpen}
+        onOpenChange={setIsShareDialogOpen}
+        canvasId={activeCanvasId}
+        canvasTitle={canvases.find((c) => c.id === activeCanvasId)?.title ?? "Canvas"}
+        currentUserId={userId}
+      />
+
+      <GooglePhotosPickerDialog
+        open={isGooglePhotosDialogOpen}
+        onOpenChange={setIsGooglePhotosDialogOpen}
+        onAddPhotos={handleAddGooglePhotos}
+      />
+
       {isMobileViewport ? (
         <MobileToolbar
           selectedId={selectedId}
@@ -701,6 +750,10 @@ export function CanvasEditor({
           canOpenMedia={canOpenSelectedMedia}
           isOpeningMedia={isOpeningMedia}
           onAddMedia={handleAddMedia}
+          onOpenGooglePhotos={() => {
+            setMobileSheetOpen(false);
+            setIsGooglePhotosDialogOpen(true);
+          }}
           onCreateCanvas={() => {
             setIsCreateDialogOpen(true);
             setMobileSheetOpen(false);
@@ -801,6 +854,15 @@ export function CanvasEditor({
                 onClick={() => { setIsCreateDialogOpen(true); setIsMobileMenuOpen(false); }}
               >
                 New Canvas
+              </Button>
+              <Button
+                variant="outline"
+                className="h-11 w-full"
+                disabled={canvases.find((c) => c.id === activeCanvasId)?.user_id !== userId}
+                onClick={() => { setIsShareDialogOpen(true); setIsMobileMenuOpen(false); }}
+              >
+                <Share2 size={14} className="mr-1.5" />
+                Share
               </Button>
               <Button
                 variant="ghost"

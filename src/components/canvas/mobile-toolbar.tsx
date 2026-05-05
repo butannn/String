@@ -27,6 +27,7 @@ type MobileToolbarProps = {
   canOpenMedia: boolean;
   isOpeningMedia: boolean;
   onAddMedia: (type: Extract<ElementType, "image" | "audio" | "video">) => void;
+  onOpenGooglePhotos: () => void;
   onCreateCanvas: () => void;
   onLogout: () => void;
 };
@@ -55,6 +56,7 @@ export function MobileToolbar({
   canOpenMedia,
   isOpeningMedia,
   onAddMedia,
+  onOpenGooglePhotos,
   onCreateCanvas,
   onLogout,
 }: MobileToolbarProps) {
@@ -145,7 +147,7 @@ export function MobileToolbar({
         <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-zinc-300 dark:bg-zinc-600" />
 
         {mobileSheetType === "add" ? (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Button className="h-12" variant="outline" onClick={() => onAddMedia("image")}>
               Add photo
             </Button>
@@ -154,6 +156,9 @@ export function MobileToolbar({
             </Button>
             <Button className="h-12" variant="outline" onClick={() => onAddMedia("video")}>
               Add video
+            </Button>
+            <Button className="h-12" variant="outline" onClick={onOpenGooglePhotos}>
+              Google Photos
             </Button>
           </div>
         ) : null}
@@ -185,6 +190,7 @@ export function MobileToolbar({
             <Button
               className="h-11"
               variant="outline"
+              data-tutorial="add-mobile"
               onClick={() => onOpenSheet("add")}
             >
               Add

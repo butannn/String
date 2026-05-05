@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CanvasEditor } from "@/components/canvas/canvas-editor";
 import { useAuth } from "@/context/auth-context";
 import { insertRow, selectRows, updateSingleRow } from "@/lib/data-api";
+import { supabase } from "@/lib/supabase";
 import type { CanvasRecord } from "@/types/canvas";
 
 function movePreferredCanvasFirst(
@@ -46,30 +47,61 @@ export function AppPage() {
 
     restoringSelectionRef.current = true;
     setLoading(true);
-    selectRows<CanvasRecord>("canvases", {
-      filters: [
-        { column: "user_id", op: "eq", value: auth.user.id },
-        { column: "deleted_at", op: "is", value: null },
-      ],
-      order: "updated_at.desc",
-    })
-      .then((rows) => {
-        const savedCanvasId = storageKey
-          ? localStorage.getItem(storageKey)
-          : null;
-        const sortedRows = movePreferredCanvasFirst(rows, savedCanvasId);
 
-        setCanvases(sortedRows);
-        setActiveCanvasId(sortedRows[0]?.id ?? null);
-        setLoading(false);
-        restoringSelectionRef.current = false;
-      })
-      .catch(() => {
-        setCanvases([]);
-        setActiveCanvasId(null);
-        setLoading(false);
-        restoringSelectionRef.current = false;
-      });
+    async function loadAllCanvases() {
+      const userId = auth.user!.id;
+
+      // Fetch owned canvases and shared canvas IDs in parallel
+      const [ownedRows, memberResult] = await Promise.all([
+        selectRows<CanvasRecord>("canvases", {
+          filters: [
+            { column: "user_id", op: "eq", value: userId },
+            { column: "deleted_at", op: "is", value: null },
+          ],
+          order: "updated_at.desc",
+        }),
+        supabase
+          .from("canvas_members")
+          .select("canvas_id")
+          .eq("user_id", userId),
+      ]);
+
+      const memberCanvasIds = (memberResult.data ?? []).map(
+        (r) => r.canvas_id as string,
+      );
+
+      // Fetch shared canvases that aren't already owned
+      let sharedRows: CanvasRecord[] = [];
+      if (memberCanvasIds.length > 0) {
+        const ownedIds = new Set(ownedRows.map((c) => c.id));
+        const idsToFetch = memberCanvasIds.filter((id) => !ownedIds.has(id));
+        if (idsToFetch.length > 0) {
+          const { data } = await supabase
+            .from("canvases")
+            .select("*")
+            .in("id", idsToFetch)
+            .is("deleted_at", null)
+            .order("updated_at", { ascending: false });
+          sharedRows = (data ?? []) as CanvasRecord[];
+        }
+      }
+
+      const allRows = [...ownedRows, ...sharedRows];
+      const savedCanvasId = storageKey ? localStorage.getItem(storageKey) : null;
+      const sortedRows = movePreferredCanvasFirst(allRows, savedCanvasId);
+
+      setCanvases(sortedRows);
+      setActiveCanvasId(sortedRows[0]?.id ?? null);
+      setLoading(false);
+      restoringSelectionRef.current = false;
+    }
+
+    loadAllCanvases().catch(() => {
+      setCanvases([]);
+      setActiveCanvasId(null);
+      setLoading(false);
+      restoringSelectionRef.current = false;
+    });
   }, [auth.user, storageKey]);
 
   useEffect(() => {
