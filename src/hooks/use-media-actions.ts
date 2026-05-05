@@ -292,6 +292,7 @@ export function useMediaActions({
           ? uploadError.message
           : "Could not upload media",
       );
+      throw uploadError;
     }
   }
 

@@ -102,7 +102,7 @@ export function AppPage() {
       setLoading(false);
       restoringSelectionRef.current = false;
     });
-  }, [auth.user, storageKey]);
+  }, [auth.user?.id, storageKey]);
 
   useEffect(() => {
     if (loading) {

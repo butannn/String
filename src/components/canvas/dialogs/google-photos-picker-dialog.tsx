@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /* ------------------------------------------------------------------ */
-/* Minimal GIS / Google Photos types                                   */
+/* Types                                                               */
 /* ------------------------------------------------------------------ */
 
 interface TokenClient {
@@ -19,24 +19,32 @@ declare global {
             scope: string;
             callback: (response: { access_token?: string; error?: string }) => void;
           }): TokenClient;
+          revoke(token: string, callback?: () => void): void;
         };
       };
     };
   }
 }
 
-type GoogleMediaItem = {
+interface PickerSession {
   id: string;
-  baseUrl: string;
-  filename: string;
-  mimeType: string;
-  mediaMetadata: {
-    width?: string;
-    height?: string;
-    photo?: object;
-    video?: object;
+  pickerUri: string;
+  mediaItemsSet: boolean;
+  expireTime: string;
+}
+
+interface PickerMediaItem {
+  id: string;
+  type: string;
+  mediaFile: {
+    baseUrl: string;
+    mimeType: string;
+    filename: string;
+    mediaFileMetadata?: { width?: number; height?: number };
   };
-};
+}
+
+type Status = "idle" | "creating" | "waiting" | "ready";
 
 type GooglePhotosPickerDialogProps = {
   open: boolean;
@@ -45,9 +53,10 @@ type GooglePhotosPickerDialogProps = {
 };
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
-const PHOTOS_SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly";
-const PHOTOS_API = "https://photoslibrary.googleapis.com/v1/mediaItems";
-const THUMBNAIL_SIZE = "=w240-h240-c";
+// photospicker scope is "sensitive" (not "restricted") — works without Google app verification
+const PICKER_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
+const PICKER_API = "https://photospicker.googleapis.com/v1";
+const POLL_INTERVAL_MS = 2500;
 
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
@@ -60,14 +69,32 @@ export function GooglePhotosPickerDialog({
 }: GooglePhotosPickerDialogProps) {
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [photos, setPhotos] = useState<GoogleMediaItem[]>([]);
-  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [loadingPhotos, setLoadingPhotos] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [status, setStatus] = useState<Status>("idle");
+  const [pickerItems, setPickerItems] = useState<PickerMediaItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const tokenClientRef = useRef<TokenClient | null>(null);
+  const lastTokenRef = useRef<string | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pickerWindowRef = useRef<Window | null>(null);
+
+  // Always-current refs so stale useCallback closures always call the latest handlers
+  const onAddPhotosRef = useRef(onAddPhotos);
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => { onAddPhotosRef.current = onAddPhotos; });
+  useEffect(() => { onOpenChangeRef.current = onOpenChange; });
+
+  // Stop polling and clean up the picker window on unmount
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      try { pickerWindowRef.current?.close(); } catch { /* ignore COOP error */ }
+    };
+  }, []);
 
   /* Load the GIS script once */
   useEffect(() => {
@@ -91,9 +118,12 @@ export function GooglePhotosPickerDialog({
   /* Reset state when dialog closes */
   useEffect(() => {
     if (!open) {
-      setPhotos([]);
-      setSelectedIds(new Set());
-      setNextPageToken(null);
+      stopPolling();
+      try { pickerWindowRef.current?.close(); } catch { /* ignore COOP error */ }
+      pickerWindowRef.current = null;
+      setAccessToken(null);
+      setStatus("idle");
+      setPickerItems([]);
       setError(null);
       setAdding(false);
     }
@@ -106,71 +136,153 @@ export function GooglePhotosPickerDialog({
 
     tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: PHOTOS_SCOPE,
+      scope: PICKER_SCOPE,
       callback: (response) => {
         if (response.error) {
           setError("Google authentication failed: " + response.error);
           return;
         }
         if (response.access_token) {
+          lastTokenRef.current = response.access_token;
           setAccessToken(response.access_token);
         }
       },
     });
   }, [scriptLoaded]);
 
-  /* Fetch photos when we have a token */
-  const fetchPhotos = useCallback(async (token: string, pageToken?: string) => {
-    const isFirstPage = !pageToken;
-    if (isFirstPage) setLoadingPhotos(true);
-    else setLoadingMore(true);
+  function stopPolling() {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
+  /* Create a picker session and navigate the provided window to it, then poll */
+  const startPicker = useCallback(async (token: string, pickerWin: Window | null) => {
+    setStatus("creating");
     setError(null);
-
+    pickerWindowRef.current = pickerWin;
     try {
-      const url = new URL(PHOTOS_API);
-      url.searchParams.set("pageSize", "50");
-      url.searchParams.set("filters.mediaTypeFilter.mediaTypes", "PHOTO");
-      if (pageToken) url.searchParams.set("pageToken", pageToken);
-
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${PICKER_API}/sessions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
       });
 
       if (!res.ok) {
-        if (res.status === 401) {
-          setAccessToken(null);
-          setError("Session expired. Please sign in again.");
-          return;
-        }
-        throw new Error(`Google Photos API error: ${res.status}`);
+        try { pickerWin?.close(); } catch { /* ignore */ }
+        const text = await res.text();
+        throw new Error(`Failed to create picker session (${res.status}): ${text}`);
       }
 
-      const data = (await res.json()) as {
-        mediaItems?: GoogleMediaItem[];
-        nextPageToken?: string;
-      };
+      const session = (await res.json()) as PickerSession;
+      setStatus("waiting");
 
-      const items = (data.mediaItems ?? []).filter(
-        (item) => item.mimeType.startsWith("image/"),
-      );
+      // Navigate the already-open window to the picker URL (mobile),
+      // or open a new tab now that we have a token (desktop).
+      if (pickerWin && !pickerWin.closed) {
+        try { pickerWin.location.href = session.pickerUri; } catch { /* ignore COOP */ }
+      } else {
+        pickerWindowRef.current = window.open(session.pickerUri, "_blank");
+      }
 
-      setPhotos((prev) => (isFirstPage ? items : [...prev, ...items]));
-      setNextPageToken(data.nextPageToken ?? null);
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const pollRes = await fetch(`${PICKER_API}/sessions/${session.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          console.log("[GooglePicker] poll status:", pollRes.status);
+          if (!pollRes.ok) return;
+
+          const pollData = (await pollRes.json()) as PickerSession;
+          console.log("[GooglePicker] mediaItemsSet:", pollData.mediaItemsSet);
+          if (!pollData.mediaItemsSet) return;
+
+          stopPolling();
+          // Wrap close() in try-catch — COOP headers may block cross-origin window access
+          try { pickerWindowRef.current?.close(); } catch { /* ignore COOP error */ }
+          pickerWindowRef.current = null;
+
+          const itemsRes = await fetch(
+            `${PICKER_API}/mediaItems?sessionId=${session.id}&pageSize=100`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          console.log("[GooglePicker] items status:", itemsRes.status);
+          if (!itemsRes.ok) {
+            throw new Error(`Failed to fetch selected items (${itemsRes.status})`);
+          }
+
+          const itemsData = (await itemsRes.json()) as { mediaItems?: PickerMediaItem[] };
+          console.log("[GooglePicker] items count:", itemsData.mediaItems?.length);
+          console.log("[GooglePicker] first item:", JSON.stringify(itemsData.mediaItems?.[0]));
+          const photos = (itemsData.mediaItems ?? []).filter((item) => item.type === "PHOTO");
+          setPickerItems(photos);
+          setStatus("ready");
+
+          // Auto-upload immediately — don't make the user click another button
+          if (photos.length === 0) return;
+          setAdding(true);
+          const files: File[] = [];
+          for (const item of photos) {
+            try {
+              console.log("[GooglePicker] downloading", item.mediaFile.filename);
+              // Request JPEG-transcoded version (=w4096-h4096-rj) to avoid HEIC/HEIF
+              // which browsers on Windows/Android cannot decode.
+              const dlRes = await fetch(`${item.mediaFile.baseUrl}=w4096-h4096-rj`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              console.log("[GooglePicker] download status", dlRes.status);
+              if (!dlRes.ok) throw new Error(`Failed to download ${item.mediaFile.filename} (HTTP ${dlRes.status})`);
+              const blob = await dlRes.blob();
+              console.log("[GooglePicker] blob size", blob.size);
+              if (blob.size === 0) throw new Error(`Downloaded file ${item.mediaFile.filename} is empty`);
+              // Force JPEG mime type and normalise extension
+              const mimeType = "image/jpeg";
+              const rawName = item.mediaFile.filename || `photo-${item.id}`;
+              const filename = rawName.replace(/\.(heic|heif|avif)$/i, ".jpg");
+              files.push(new File([blob], filename, { type: mimeType }));
+            } catch (dlErr) {
+              console.error("[GooglePicker] download error", dlErr);
+              setError(dlErr instanceof Error ? dlErr.message : "Failed to download photo");
+              setAdding(false);
+              return;
+            }
+          }
+          try {
+            console.log("[GooglePicker] uploading", files.length, "files");
+            await onAddPhotosRef.current(files);
+            onOpenChangeRef.current(false);
+          } catch (upErr) {
+            console.error("[GooglePicker] upload error", upErr);
+            setError(upErr instanceof Error ? upErr.message : "Failed to add photos");
+          } finally {
+            setAdding(false);
+          }
+        } catch (pollErr) {
+          console.error("[GooglePicker] poll error:", pollErr);
+          stopPolling();
+          setError(pollErr instanceof Error ? pollErr.message : "Failed to check picker status");
+          setStatus("idle");
+        }
+      }, POLL_INTERVAL_MS);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load photos");
-    } finally {
-      if (isFirstPage) setLoadingPhotos(false);
-      else setLoadingMore(false);
+      setError(err instanceof Error ? err.message : "Failed to open picker");
+      setStatus("idle");
     }
   }, []);
 
+  /* When we get a token, the picker window was already opened in handleSignIn */
   useEffect(() => {
-    if (accessToken) {
-      void fetchPhotos(accessToken);
+    if (accessToken && pickerWindowRef.current !== undefined) {
+      void startPicker(accessToken, pickerWindowRef.current);
     }
-  }, [accessToken, fetchPhotos]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
 
-  /* Auth */
+  /* Sign in — open the picker window HERE (direct user gesture) so it isn't blocked */
   function handleSignIn() {
     if (!GOOGLE_CLIENT_ID) {
       setError("VITE_GOOGLE_CLIENT_ID is not configured.");
@@ -180,54 +292,65 @@ export function GooglePhotosPickerDialog({
       setError("Google Identity Services did not load.");
       return;
     }
-    tokenClientRef.current.requestAccessToken({ prompt: "consent" });
-  }
+    // On mobile, GIS uses a redirect-based OAuth flow so pre-opening a blank tab
+    // is safe and prevents popup blocking for the picker URL.
+    // On desktop, GIS shows a popup for OAuth — pre-opening a window consumes
+    // the user gesture, causing the browser to block the GIS auth popup.
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const pickerWin = isMobile ? window.open("", "_blank") : null;
+    pickerWindowRef.current = pickerWin;
 
-  /* Selection toggle */
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const doRequest = () => tokenClientRef.current?.requestAccessToken({ prompt: "consent" });
+    if (lastTokenRef.current && window.google?.accounts?.oauth2?.revoke) {
+      const tokenToRevoke = lastTokenRef.current;
+      lastTokenRef.current = null;
+      window.google.accounts.oauth2.revoke(tokenToRevoke, doRequest);
+    } else {
+      doRequest();
+    }
   }
 
   /* Download selected photos and pass to parent */
   async function handleAddSelected() {
-    if (!accessToken || selectedIds.size === 0) return;
+    if (!accessToken || pickerItems.length === 0) return;
     setAdding(true);
     setError(null);
 
-    const selected = photos.filter((p) => selectedIds.has(p.id));
     const files: File[] = [];
-
-    for (const item of selected) {
+    for (const item of pickerItems) {
       try {
-        /* =d suffix requests the original-resolution download */
-        const res = await fetch(`${item.baseUrl}=d`, {
+        console.log("[GooglePicker] downloading", item.mediaFile.filename, item.mediaFile.baseUrl);
+        // Request JPEG-transcoded version to avoid HEIC/HEIF browser decode issues.
+        const res = await fetch(`${item.mediaFile.baseUrl}=w4096-h4096-rj`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        if (!res.ok) throw new Error(`Failed to download ${item.filename}`);
+        console.log("[GooglePicker] download status", res.status, res.headers.get("content-type"));
+        if (!res.ok) {
+          throw new Error(`Failed to download ${item.mediaFile.filename} (HTTP ${res.status})`);
+        }
         const blob = await res.blob();
-        files.push(
-          new File([blob], item.filename, {
-            type: item.mimeType || "image/jpeg",
-          }),
-        );
+        console.log("[GooglePicker] blob size", blob.size, "type", blob.type);
+        if (blob.size === 0) {
+          throw new Error(`Downloaded file ${item.mediaFile.filename} is empty`);
+        }
+        const mimeType = "image/jpeg";
+        const rawName = item.mediaFile.filename || `photo-${item.id}`;
+        const filename = rawName.replace(/\.(heic|heif|avif)$/i, ".jpg");
+        files.push(new File([blob], filename, { type: mimeType }));
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : `Failed to download ${item.filename}`,
-        );
+        console.error("[GooglePicker] download error", err);
+        setError(err instanceof Error ? err.message : "Failed to download photo");
         setAdding(false);
         return;
       }
     }
 
+    console.log("[GooglePicker] uploading", files.length, "files");
     try {
       await onAddPhotos(files);
       onOpenChange(false);
     } catch (err) {
+      console.error("[GooglePicker] upload error", err);
       setError(err instanceof Error ? err.message : "Failed to add photos");
     } finally {
       setAdding(false);
@@ -237,20 +360,14 @@ export function GooglePhotosPickerDialog({
   if (!open) return null;
 
   return (
-    /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onOpenChange(false);
-      }}
     >
-      <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
           <div className="flex items-center gap-2">
-            {/* Google Photos colour icon */}
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 2C9.8 2 8 3.8 8 6v6H6C3.8 12 2 13.8 2 16s1.8 4 4 4h6v2h4v-2h2c2.2 0 4-1.8 4-4s-1.8-4-4-4h-2V6c0-2.2-1.8-4-4-4z" fill="none"/>
               <circle cx="12" cy="6" r="4" fill="#EA4335"/>
               <circle cx="18" cy="12" r="4" fill="#FBBC05"/>
               <circle cx="12" cy="18" r="4" fill="#34A853"/>
@@ -286,117 +403,100 @@ export function GooglePhotosPickerDialog({
             </div>
           )}
 
-          {/* Sign in prompt */}
-          {GOOGLE_CLIENT_ID && !accessToken && (
+          {/* Error */}
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+              {error}
+            </div>
+          )}
+
+          {/* Idle — show sign-in button */}
+          {GOOGLE_CLIENT_ID && status === "idle" && (
             <div className="flex flex-col items-center gap-4 py-8">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Sign in to access your Google Photos library.
+              <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">
+                Opens the Google Photos picker so you can select photos to add to your canvas.
               </p>
               <Button onClick={handleSignIn} disabled={!scriptLoaded}>
-                {scriptLoaded ? "Sign in with Google" : "Loading…"}
+                {scriptLoaded ? "Open Google Photos Picker" : "Loading…"}
               </Button>
             </div>
           )}
 
-          {/* Loading first page */}
-          {accessToken && loadingPhotos && (
+          {/* Creating session */}
+          {status === "creating" && (
             <div className="flex items-center justify-center py-16">
-              <span className="text-sm text-zinc-400">Loading photos…</span>
+              <span className="text-sm text-zinc-400">Opening Google Photos picker…</span>
             </div>
           )}
 
-          {/* Photo grid */}
-          {accessToken && !loadingPhotos && photos.length > 0 && (
-            <>
-              <p className="mb-3 text-xs text-zinc-400">
-                {selectedIds.size > 0
-                  ? `${selectedIds.size} photo${selectedIds.size > 1 ? "s" : ""} selected`
-                  : "Tap photos to select"}
+          {/* Waiting for user to pick */}
+          {status === "waiting" && (
+            <div className="flex flex-col items-center gap-4 py-10 text-center">
+              <svg className="h-8 w-8 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Google Photos picker opened in a new tab
               </p>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                {photos.map((photo) => {
-                  const isSelected = selectedIds.has(photo.id);
-                  return (
-                    <button
-                      key={photo.id}
-                      type="button"
-                      onClick={() => toggleSelect(photo.id)}
-                      className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all ${
-                        isSelected
-                          ? "border-blue-500 ring-2 ring-blue-300"
-                          : "border-transparent hover:border-zinc-300"
-                      }`}
-                    >
-                      <img
-                        src={`${photo.baseUrl}${THUMBNAIL_SIZE}`}
-                        alt={photo.filename}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                      {isSelected && (
-                        <div className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                            <polyline points="20 6 9 17 4 12"/>
-                          </svg>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Load more */}
-              {nextPageToken && (
-                <div className="mt-4 flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (accessToken && nextPageToken) {
-                        void fetchPhotos(accessToken, nextPageToken);
-                      }
-                    }}
-                    disabled={loadingMore}
-                  >
-                    {loadingMore ? "Loading…" : "Load more"}
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Empty state */}
-          {accessToken && !loadingPhotos && photos.length === 0 && (
-            <div className="py-12 text-center text-sm text-zinc-400">
-              No photos found in your Google Photos library.
+              <p className="max-w-xs text-xs text-zinc-400">
+                Select your photos there and click <strong>Done</strong>. This dialog will update automatically when you finish.
+              </p>
+              <button
+                type="button"
+                onClick={() => pickerWindowRef.current?.focus()}
+                className="mt-1 text-xs text-blue-500 underline hover:text-blue-600"
+              >
+                Switch to picker tab
+              </button>
             </div>
           )}
 
-          {/* Error */}
-          {error && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-              {error}
+          {/* Ready — show selected photos */}
+          {status === "ready" && pickerItems.length > 0 && (
+            <div>
+              <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-300">
+                {pickerItems.length} photo{pickerItems.length !== 1 ? "s" : ""} ready to add
+              </p>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {pickerItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex aspect-square flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-800"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-400" aria-hidden="true">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span className="w-full truncate text-center text-xs text-zinc-500 dark:text-zinc-400">
+                      {item.mediaFile.filename}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {status === "ready" && pickerItems.length === 0 && (
+            <div className="py-10 text-center text-sm text-zinc-400">
+              No photos were selected.
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-zinc-200 px-5 py-4 dark:border-zinc-700">
-          <span className="text-xs text-zinc-400">
-            {accessToken ? `${photos.length} photo${photos.length !== 1 ? "s" : ""} loaded` : ""}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void handleAddSelected()}
-              disabled={selectedIds.size === 0 || adding || !accessToken}
-            >
+        <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-700">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={adding}>
+            Cancel
+          </Button>
+          {status === "ready" && pickerItems.length > 0 && (
+            <Button onClick={() => void handleAddSelected()} disabled={adding}>
               {adding
-                ? `Adding ${selectedIds.size}…`
-                : `Add ${selectedIds.size > 0 ? selectedIds.size : ""} photo${selectedIds.size !== 1 ? "s" : ""}`.trim()}
+                ? "Adding…"
+                : `Add ${pickerItems.length} photo${pickerItems.length !== 1 ? "s" : ""}`}
             </Button>
-          </div>
+          )}
         </div>
       </div>
     </div>

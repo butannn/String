@@ -653,7 +653,7 @@ export function CanvasEditor({
           // events while the file picker was open (common on mobile).
           pendingElementDragRef.current = null;
           elementDraggedRef.current = false;
-          void handleMediaFile(file, "image");
+          void handleMediaFile(file, "image").catch(() => {});
           event.currentTarget.value = "";
         }}
       />
@@ -666,7 +666,7 @@ export function CanvasEditor({
           const file = event.target.files?.[0] ?? null;
           pendingElementDragRef.current = null;
           elementDraggedRef.current = false;
-          void handleMediaFile(file, "audio");
+          void handleMediaFile(file, "audio").catch(() => {});
           event.currentTarget.value = "";
         }}
       />
@@ -679,7 +679,7 @@ export function CanvasEditor({
           const file = event.target.files?.[0] ?? null;
           pendingElementDragRef.current = null;
           elementDraggedRef.current = false;
-          void handleMediaFile(file, "video");
+          void handleMediaFile(file, "video").catch(() => {});
           event.currentTarget.value = "";
         }}
       />
