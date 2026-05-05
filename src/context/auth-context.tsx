@@ -27,12 +27,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      setIsLoading(false);
-    });
-
+    // onAuthStateChange fires INITIAL_SESSION immediately in Supabase v2,
+    // so getSession() is redundant and can cause race-condition state flips.
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
@@ -66,9 +62,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            emailRedirectTo: window.location.origin,
-          },
         });
 
         if (error) {
@@ -81,6 +74,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
             );
           }
           throw error;
+        }
+
+        // If session is null after signup, email confirmation is still required.
+        // Sign out immediately to cancel any temporary session Supabase may have
+        // created (which would cause a SIGNED_IN → SIGNED_OUT flash/redirect loop).
+        if (!data.session) {
+          await supabase.auth.signOut();
+          throw new Error(
+            'Account created but sign-in requires email confirmation. Disable "Confirm email" in Supabase Dashboard > Authentication > Providers > Email for username-only auth.',
+          );
         }
 
         const newUser = data.user;

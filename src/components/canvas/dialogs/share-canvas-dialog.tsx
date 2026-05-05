@@ -54,16 +54,42 @@ export function ShareCanvasDialog({
   async function loadMembers() {
     if (!canvasId) return;
     try {
-      const { data, error: err } = await supabase
+      const { data: memberRows, error: memberErr } = await supabase
         .from("canvas_members")
-        .select("*, profiles(id, username, created_at, updated_at)")
+        .select("id, canvas_id, user_id, role, invited_by, created_at")
         .eq("canvas_id", canvasId)
         .order("created_at", { ascending: true });
 
-      if (err) throw err;
-      setMembers((data as CanvasMemberRecord[]) ?? []);
+      if (memberErr) throw memberErr;
+      if (!memberRows?.length) {
+        setMembers([]);
+        return;
+      }
+
+      const userIds = memberRows.map((m) => m.user_id as string);
+      const { data: profileRows, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id, username, created_at, updated_at")
+        .in("id", userIds);
+
+      if (profileErr) throw profileErr;
+
+      const profileMap = new Map(
+        (profileRows ?? []).map((p) => [p.id as string, p as ProfileRecord]),
+      );
+
+      setMembers(
+        memberRows.map((m) => ({
+          ...(m as CanvasMemberRecord),
+          profiles: profileMap.get(m.user_id as string),
+        })),
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load members");
+      setError(
+        e instanceof Error
+          ? e.message
+          : (e as { message?: string })?.message ?? "Failed to load members",
+      );
     }
   }
 
@@ -113,23 +139,25 @@ export function ShareCanvasDialog({
     setIsAdding(true);
     setError(null);
     try {
-      const { data, error: err } = await supabase
+      const { error: err } = await supabase
         .from("canvas_members")
         .insert({
           canvas_id: canvasId,
           user_id: searchResult.id,
           role: "editor",
           invited_by: currentUserId,
-        })
-        .select("*, profiles(id, username, created_at, updated_at)")
-        .single();
+        });
 
       if (err) throw err;
-      setMembers((prev) => [...prev, data as CanvasMemberRecord]);
+      await loadMembers();
       setSearchQuery("");
       setSearchResult(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add member");
+      setError(
+        e instanceof Error
+          ? e.message
+          : (e as { message?: string })?.message ?? "Failed to add member",
+      );
     } finally {
       setIsAdding(false);
     }
@@ -147,7 +175,11 @@ export function ShareCanvasDialog({
       if (err) throw err;
       setMembers((prev) => prev.filter((m) => m.id !== memberId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove member");
+      setError(
+        e instanceof Error
+          ? e.message
+          : (e as { message?: string })?.message ?? "Failed to remove member",
+      );
     } finally {
       setRemovingId(null);
     }
