@@ -2324,6 +2324,8 @@ export function CanvasEditor({
                   key={element.id}
                   className="absolute"
                   data-canvas-element="true"
+                  \
+                  
                   style={{
                     left: `${element.x}px`,
                     top: `${element.y}px`,

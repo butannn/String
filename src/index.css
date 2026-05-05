@@ -89,9 +89,6 @@ html.dark body {
 
 .canvas-viewport {
   touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
   background-color: #f7ede0 !important;
 }
 
