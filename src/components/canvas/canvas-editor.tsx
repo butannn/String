@@ -21,6 +21,7 @@ import { CreateCanvasDialog } from "@/components/canvas/dialogs/create-canvas-di
 import { ShareCanvasDialog } from "@/components/canvas/dialogs/share-canvas-dialog";
 import { CanvasTutorial } from "@/components/canvas/canvas-tutorial";
 import { GooglePhotosPickerDialog } from "@/components/canvas/dialogs/google-photos-picker-dialog";
+import { MapCanvasEditor } from "@/components/canvas/map-canvas";
 import { Button } from "@/components/ui/button";
 import { useDarkMode } from "@/hooks/use-dark-mode";
 import { Moon, Share2, Sun, X } from "lucide-react";
@@ -32,7 +33,7 @@ type CanvasEditorProps = {
   canvases: CanvasRecord[];
   activeCanvasId: string | null;
   onSelectCanvas: (canvasId: string) => void;
-  onCreateCanvas: (title: string) => Promise<void>;
+  onCreateCanvas: (title: string, canvasType?: string) => Promise<void>;
   onRenameCanvas: (canvasId: string, title: string) => Promise<void>;
   onDeleteCanvas: (canvasId: string) => Promise<void>;
   onLogout: () => Promise<void>;
@@ -413,6 +414,21 @@ export function CanvasEditor({
     event.stopPropagation();
     startElementLongPress(id);
   }, [startElementLongPress]);
+
+  // Render UK Map canvas when active canvas has that type
+  const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
+  if (activeCanvas?.canvas_type === "uk_map") {
+    return (
+      <MapCanvasEditor
+        userId={userId}
+        canvases={canvases}
+        activeCanvasId={activeCanvasId}
+        onSelectCanvas={onSelectCanvas}
+        onCreateCanvas={onCreateCanvas}
+        onLogout={onLogout}
+      />
+    );
+  }
 
   return (
     <main className="fixed inset-0 flex flex-col bg-zinc-100 dark:bg-zinc-950">

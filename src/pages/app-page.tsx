@@ -150,10 +150,11 @@ export function AppPage() {
         setActiveCanvasId(canvasId);
         setCanvases((previous) => movePreferredCanvasFirst(previous, canvasId));
       }}
-      onCreateCanvas={async (title) => {
+      onCreateCanvas={async (title, canvasType) => {
         const data = await insertRow<CanvasRecord>("canvases", {
           user_id: userId,
           title: title.trim() || "Untitled Canvas",
+          ...(canvasType ? { canvas_type: canvasType } : {}),
         });
 
         setCanvases((previous) => [data, ...previous]);

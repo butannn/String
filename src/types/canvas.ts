@@ -60,6 +60,7 @@ export type CanvasRecord = {
   pan_x: number;
   pan_y: number;
   zoom_level: number;
+  canvas_type?: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
